@@ -105,20 +105,39 @@ def get_texts(indirs):
 
 #------------------------------------------------------------------------------
 
-def score_digests(digests):
+def score_digests(digests, k=3):
     '''
     Calculate distance for each pair of digests and score precision and recall
     '''
+
+    def basename(fullname):
+        '''
+        let's assume fullname is always well formed
+        '''
+        return fullname.split('__')[0]
+    
     n = len(digests)
     # init distance matrix
     dmatrix = np.zeros(shape=(n,n))
+    # calculate distance matrix, maybe we'll need it later
     for i in range(n):
         for j in range(n):
             dmatrix[i][j] = simhash.hamming(digests[i]['sh'], digests[j]['sh'])
-            #print(digests[i]['name'], digests[j]['name'], dmatrix[i][j])
+    # calculate num of true/false positives
+    num_tp = 0
+    num_fp = 0
     for i in range(n):
-        dmatrix[i] = sorted(dmatrix[i])
-    print dmatrix
+        #dmatrix[i] = sorted(dmatrix[i])
+        similars = [j for j, d in enumerate(dmatrix[i])
+                    if digests[j]['name'] != digests[i]['name'] and d <= k]
+        for s in similars:
+            if basename(digests[i]['name']) == basename(digests[s]['name']):
+                num_tp += 1
+            else:
+                num_fp += 1
+            #print(digests[i]['name'], digests[s]['name'])
+    print(num_tp, num_fp)
+    return num_tp, num_fp
 
 #------------------------------------------------------------------------------
     
@@ -155,8 +174,8 @@ if __name__ == '__main__':
                         default=False,
                         required=False,
                         type=bool)
-    parser.add_argument('--analyze',
-                        dest='analyze',
+    parser.add_argument('--score',
+                        dest='score',
                         help='input file for the score analysis',
                         default=False,
                         required=False,
@@ -170,6 +189,6 @@ if __name__ == '__main__':
         digests = sorted(digests, key=lambda i: i['name'])
         with open(args.o, 'wb') as fout:
             pickle.dump(digests, fout)
-    elif args.analyze:
-        with open(args.analyze, 'rb') as fin:
+    elif args.score:
+        with open(args.score, 'rb') as fin:
             score_digests(pickle.load(fin))
