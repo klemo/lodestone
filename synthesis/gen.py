@@ -160,9 +160,10 @@ def gen_corrupted_texts(indir, outdir, num_processes=20):
     if not os.path.exists(outdir):
         os.makedirs(outdir)
     pool = Pool(processes=num_processes)
-    # corrupt files in ten steps (0.01 - 0.10)
-    corrupt_range = [p for p in range(1, 4)]
+    # corrupt files in range:
+    corrupt_range = [p for p in range(15, 55, 5)]
     numd = len(corrupt_range)
+    LOG.info('Will generate {} versions of each file'.format(numd)) 
     for name, text in get_texts(indir):
         # write original file as is
         orig_filename = name + '__.txt'

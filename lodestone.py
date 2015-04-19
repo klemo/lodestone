@@ -9,7 +9,7 @@ to generate book digests:
 $ python lodestone.py --i path_to_books_dir --o digests
 
 to analyze book digests:
-$ python lodestone.py --analyze digests
+$ python lodestone.py --score digests --num_variants x --graph
 '''
 
 #------------------------------------------------------------------------------
@@ -24,8 +24,7 @@ from multiprocessing import Pool
 import csv
 import simhash
 import numpy as np
-from sklearn.cluster import DBSCAN, AffinityPropagation
-from sklearn import metrics
+import matplotlib.pyplot as plt
 
 #------------------------------------------------------------------------------
 
@@ -105,7 +104,7 @@ def get_texts(indirs):
 
 #------------------------------------------------------------------------------
 
-def score_digests(digests, k=3):
+def score_digests(digests, krange, num_variants, render_graph):
     '''
     Calculate distance for each pair of digests and score precision and recall
     '''
@@ -115,6 +114,10 @@ def score_digests(digests, k=3):
         let's assume fullname is always well formed
         '''
         return fullname.split('__')[0]
+
+    if not num_variants:
+        print('Must give --num_variants')
+        return
     
     n = len(digests)
     # init distance matrix
@@ -122,22 +125,39 @@ def score_digests(digests, k=3):
     # calculate distance matrix, maybe we'll need it later
     for i in range(n):
         for j in range(n):
-            dmatrix[i][j] = simhash.hamming(digests[i]['sh'], digests[j]['sh'])
-    # calculate num of true/false positives
-    num_tp = 0
-    num_fp = 0
-    for i in range(n):
-        #dmatrix[i] = sorted(dmatrix[i])
-        similars = [j for j, d in enumerate(dmatrix[i])
-                    if digests[j]['name'] != digests[i]['name'] and d <= k]
-        for s in similars:
-            if basename(digests[i]['name']) == basename(digests[s]['name']):
-                num_tp += 1
-            else:
-                num_fp += 1
-            #print(digests[i]['name'], digests[s]['name'])
-    print(num_tp, num_fp)
-    return num_tp, num_fp
+            dmatrix[i][j] = simhash.hamming(
+                digests[i]['sh'], digests[j]['sh'])
+    if not krange:
+        krange = range(10, 50, 5)
+    scores = []
+    for k in krange:
+        # number of true/false positives
+        tp = 0
+        fp = 0
+        for i in range(n):
+            similars = [j for j, d in enumerate(dmatrix[i])
+                        if digests[j]['name'] != digests[i]['name'] and d <= k]
+            for s in similars:
+                if basename(digests[i]['name']) == basename(digests[s]['name']):
+                    tp += 1
+                else:
+                    fp += 1
+        if not tp and not fp:
+            continue
+        precision = float(tp)/(tp + fp)
+        recall = float(tp)/(num_variants*n) # total number of duplicates
+        scores.append((k, precision, recall))
+    if render_graph:
+        # precision graph
+        pyt = [precision for _, precision, _ in scores]
+        # recall graph
+        ryt = [recall for _, _, recall in scores]
+        xt = [k for k, _, _  in scores]
+        plt.plot(pyt, 'r-')
+        plt.plot(ryt, 'b-')
+        plt.xticks(range(1, len(pyt)+1), xt)
+        plt.show()
+    return scores
 
 #------------------------------------------------------------------------------
     
@@ -180,6 +200,21 @@ if __name__ == '__main__':
                         default=False,
                         required=False,
                         type=str)
+    parser.add_argument('--dist_k',
+                        help='hamming distance to check',
+                        default=None,
+                        required=False,
+                        type=int)
+    parser.add_argument('--num_variants',
+                        help='num of book variants',
+                        default=None,
+                        required=False,
+                        type=int)
+    parser.add_argument('--graph',
+                        help='render graph',
+                        default=False,
+                        const=True,
+                        nargs='?')
     args = parser.parse_args()
     conf = {'k': args.conf_k,
             'lenhash': args.conf_lenhash,
@@ -191,4 +226,10 @@ if __name__ == '__main__':
             pickle.dump(digests, fout)
     elif args.score:
         with open(args.score, 'rb') as fin:
-            score_digests(pickle.load(fin))
+            krange = []
+            if args.dist_k:
+                krange = [args.dist_k]
+            pprint(score_digests(pickle.load(fin),
+                                 krange,
+                                 args.num_variants,
+                                 args.graph))
