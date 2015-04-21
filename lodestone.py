@@ -25,10 +25,15 @@ import csv
 import simhash
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn import cluster
 
 #------------------------------------------------------------------------------
 
 LOG = logging.getLogger('lodestone')
+
+#------------------------------------------------------------------------------
+
+NAME_SEPARATOR = '__'
 
 #------------------------------------------------------------------------------
     
@@ -103,18 +108,19 @@ def get_texts(indirs):
             yield name, filepath
 
 #------------------------------------------------------------------------------
+            
+def basename(fullname):
+        '''
+        let's assume fullname is always well formed
+        '''
+        return fullname.split(NAME_SEPARATOR)[0]
+
+#------------------------------------------------------------------------------
 
 def score_digests(digests, krange, num_variants, render_graph):
     '''
     Calculate distance for each pair of digests and score precision and recall
     '''
-
-    def basename(fullname):
-        '''
-        let's assume fullname is always well formed
-        '''
-        return fullname.split('__')[0]
-
     if not num_variants:
         print('Must give --num_variants')
         return
@@ -160,20 +166,62 @@ def score_digests(digests, krange, num_variants, render_graph):
     return scores
 
 #------------------------------------------------------------------------------
+
+def cluster_digests(digests, conf, gold):
+    '''
+    Cluster digests using K-means algorithm
+
+    :param digests: list of dicts with name and digest/sh attrs
+    :param conf: hashing configuration
+    :param gold: gold clusters dict
+    '''
+    # prepare data for clustering: extract every bit as a feature
+    n = len(digests)
+    lenhash = conf['lenhash']
+    features = np.zeros(shape=(n, lenhash))
+    for i in range(n):
+        bin_str = bin(digests[i]['sh'])[2:]
+        for j in range(lenhash):
+            features[i][j] = float(bin_str[j])
+    # number of clusters is equal to number of canonical texts
+    n_clusters = len(set([basename(i['name']) for i in digests]))
+    k_means = cluster.KMeans(n_clusters=n_clusters)
+    k_means.fit(features)
+    labels = zip([i['name'] for i in digests], k_means.labels_)
+    print('Num clusters: {}'.format(max(k_means.labels_) + 1))
+    # calculate precision, recall and f1
+    if gold_clusters:
+        tp = fn = fp = 0.
+        for i in range(n):
+            for j in range(n):
+                if labels[i][0] != labels[j][0]:
+                    this_val = labels[i][1] == labels[j][1]
+                    gold_val = gold[(labels[i][0], labels[j][0])]
+                    # tp
+                    if gold_val and this_val:
+                        tp += 1
+                    elif gold_val and not this_val:
+                        fn += 1
+                    elif not gold_val and this_val:
+                        fp += 1
+        p = tp / (tp + fp)
+        r = tp / (tp + fn)
+        f1 = 2 * p * r / (p + r)
+        print('p={}, r={}, f1={}'.format(p, r, f1))
+
+#------------------------------------------------------------------------------
     
 if __name__ == '__main__':
     logging.basicConfig(format='%(levelname)s : %(message)s',
                         level=logging.DEBUG)
     parser = argparse.ArgumentParser()
     parser.add_argument('--i',
-                        dest='i',
                         help='path to input directory with txt books',
                         required=False,
                         nargs='*')
     parser.add_argument('--o',
-                        dest='o',
                         help='path to output (pickled) file',
-                        default='out.pickle',
+                        default='out.tmp',
                         required=False,
                         type=str)
     parser.add_argument('--k',
@@ -195,9 +243,19 @@ if __name__ == '__main__':
                         required=False,
                         type=bool)
     parser.add_argument('--score',
-                        dest='score',
                         help='input file for the score analysis',
                         default=False,
+                        required=False,
+                        type=str)
+    parser.add_argument('--clusters',
+                        dest='clusters',
+                        help='input file for the cluster analysis',
+                        default=None,
+                        required=False,
+                        type=str)
+    parser.add_argument('--gold',
+                        help='information about gold clusers',
+                        default=None,
                         required=False,
                         type=str)
     parser.add_argument('--dist_k',
@@ -223,7 +281,8 @@ if __name__ == '__main__':
         digests = hash_path_async(args.i, conf)
         digests = sorted(digests, key=lambda i: i['name'])
         with open(args.o, 'wb') as fout:
-            pickle.dump(digests, fout)
+            pickle.dump({'digests': digests, 'conf': conf},
+                        fout)
     elif args.score:
         with open(args.score, 'rb') as fin:
             krange = []
@@ -233,3 +292,11 @@ if __name__ == '__main__':
                                  krange,
                                  args.num_variants,
                                  args.graph))
+    elif args.clusters:
+        gold_clusters = None
+        if args.gold:
+            with open(args.gold, 'rb') as fin:
+                gold_clusters = pickle.load(fin)
+        with open(args.clusters, 'rb') as fin:
+            data = pickle.load(fin)
+            cluster_digests(data['digests'], data['conf'], gold_clusters)

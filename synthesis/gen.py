@@ -16,11 +16,13 @@ import argparse
 import logging
 import os
 from pprint import pprint
+import pickle
 from multiprocessing import Pool
 import numpy
 from scipy import stats
 import random
 import string
+import shutil
 from collections import defaultdict
 
 #------------------------------------------------------------------------------
@@ -29,7 +31,16 @@ LOG = logging.getLogger(__name__)
 
 #------------------------------------------------------------------------------
 
+NAME_SEPARATOR = '__'
 LETTERS = string.ascii_letters + string.digits
+
+#------------------------------------------------------------------------------
+            
+def basename(fullname):
+        '''
+        let's assume fullname is always well formed
+        '''
+        return fullname.split(NAME_SEPARATOR)[0]
 
 #------------------------------------------------------------------------------
 
@@ -140,44 +151,64 @@ def corrupt_ocr(raw_text, p):
 
 def corrupt(params):
     '''
-    Entry point for corruption pipeline
+    Corrupt text in parallel
 
-    :param outdir: output directory
-    :param name: filename
-    :param text: clear text to corrupt
-    :param p: corruption parameter 0.0-1.0
+    :param params: (output directory, filename, input text, corruption rate)
     '''
     outdir, name, text, p = params
     cp = float(p)/1000
-    corrupted_name = '{}__{:03d}.txt'.format(name, p)
+    corrupted_name = '{}{}{:03d}'.format(name, NAME_SEPARATOR, p)
     LOG.info('Writing {} with p={:.3f}'.format(corrupted_name, cp))
-    with open(os.path.join(outdir, corrupted_name), 'w') as fout:
+    with open(os.path.join(outdir, corrupted_name + '.txt'), 'w') as fout:
         fout.write(corrupt_ocr(text, cp))
-    return None
+    return corrupted_name
 
 #------------------------------------------------------------------------------
 def gen_corrupted_texts(indir, outdir, num_processes=20):
-    if not os.path.exists(outdir):
-        os.makedirs(outdir)
+    '''
+    Spawn corruption in parallel for every text file in a given input
+    directory and write corrupted texts to output directory
+
+    :param indir: input directory
+    :param outdir: output directory
+    :param num_processes: default number of processes in the process pool
+    '''
+    # remove existing texts in outdir
+    if os.path.isdir(outdir):
+        shutil.rmtree(outdir, ignore_errors=True)
+    os.makedirs(outdir)
     pool = Pool(processes=num_processes)
     # corrupt files in range:
     corrupt_range = [p for p in range(15, 55, 5)]
     numd = len(corrupt_range)
-    LOG.info('Will generate {} versions of each file'.format(numd)) 
+    LOG.info('Will generate {} versions of each file'.format(numd))
+    wfiles = []
     for name, text in get_texts(indir):
         # write original file as is
-        orig_filename = name + '__.txt'
+        orig_filename = name + NAME_SEPARATOR
         LOG.info('Writing {}'.format(orig_filename)) 
-        with open(os.path.join(outdir, orig_filename), 'w') as fout:
+        with open(os.path.join(outdir, orig_filename + '.txt'), 'w') as fout:
             fout.write(text)
+        wfiles.append(orig_filename)
+        # write corrupted texts
         result = pool.map(corrupt, zip([outdir]*numd,
                                        [name]*numd,
                                        [text]*numd,
                                        corrupt_range))
+        wfiles.extend(result)
     pool.close()
     pool.join()
-    with open(os.path.join(outdir, 'gold.csv'), 'w') as goldout:
-        pass
+    # write gold clusters
+    scores = {}
+    n = len(wfiles)
+    for i in range(n):
+        for j in range(n):
+            if wfiles[i] != wfiles[j]:
+                scores[(wfiles[i], wfiles[j])] = \
+                    basename(wfiles[i]) == basename(wfiles[j])
+    with open(os.path.join(outdir, 'gold_clusters.tmp'), 'w') as goldout:
+        print scores
+        pickle.dump(scores, goldout)
 
 #------------------------------------------------------------------------------
     
