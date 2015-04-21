@@ -26,6 +26,7 @@ import simhash
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn import cluster
+import utils
 
 #------------------------------------------------------------------------------
 
@@ -34,22 +35,6 @@ LOG = logging.getLogger('lodestone')
 #------------------------------------------------------------------------------
 
 NAME_SEPARATOR = '__'
-
-#------------------------------------------------------------------------------
-    
-def timeit(method):
-    '''
-    Simple profiling decorator
-    '''
-    def timed(*args, **kw):
-        ts = time.time()
-        result = method(*args, **kw)
-        te = time.time()
-        print('Exec time for method --{}--: {:.2f} sec'.format(
-                method.__name__,te-ts))
-        return result
-
-    return timed
 
 #------------------------------------------------------------------------------
         
@@ -73,6 +58,7 @@ def hash_filepath_worker(param):
             
 #------------------------------------------------------------------------------
 
+@utils.timeit
 def hash_path_async(path, conf, num_processes=20):
     '''
     Parallel calculation of fingerprints for all book files in the given

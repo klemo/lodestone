@@ -24,6 +24,7 @@ import random
 import string
 import shutil
 from collections import defaultdict
+import utils
 
 #------------------------------------------------------------------------------
 
@@ -164,7 +165,9 @@ def corrupt(params):
     return corrupted_name
 
 #------------------------------------------------------------------------------
-def gen_corrupted_texts(indir, outdir, num_processes=20):
+
+@utils.timeit
+def gen_corrupted_texts(indir, outdir, num_processes=50):
     '''
     Spawn corruption in parallel for every text file in a given input
     directory and write corrupted texts to output directory
@@ -207,7 +210,6 @@ def gen_corrupted_texts(indir, outdir, num_processes=20):
                 scores[(wfiles[i], wfiles[j])] = \
                     basename(wfiles[i]) == basename(wfiles[j])
     with open(os.path.join(outdir, 'gold_clusters.tmp'), 'w') as goldout:
-        print scores
         pickle.dump(scores, goldout)
 
 #------------------------------------------------------------------------------
