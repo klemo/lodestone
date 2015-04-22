@@ -246,7 +246,6 @@ def run_baseline(indir, gold):
                                  #use_idf=True,
                                  )
     features = vectorizer.fit_transform([f[1] for f in files])
-    #tfidf_vectorizer.get_feature_names()
     # number of clusters is equal to number of canonical texts
     n_clusters = len(set([basename(f[0]) for f in files]))
     k_means = cluster.KMeans(n_clusters=n_clusters)
