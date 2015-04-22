@@ -239,12 +239,17 @@ def run_baseline(indir, gold):
     stopwords = nltk.corpus.stopwords.words('english')
     files = sorted(list(get_texts(indir)), key=lambda x: x[0])
     vectorizer = TfidfVectorizer(input='filename',
-                                 decode_error='ignore')
+                                 decode_error='ignore',
+                                 max_features=100000,
+                                 max_df=0.8,
+                                 min_df=0.2,
+                                 #stop_words='english',
+                                 #use_idf=True,
+                                 )
     features = vectorizer.fit_transform([f[1] for f in files])
     #tfidf_vectorizer.get_feature_names()
     # number of clusters is equal to number of canonical texts
     n_clusters = len(set([basename(f[0]) for f in files]))
-    print n_clusters
     k_means = cluster.KMeans(n_clusters=n_clusters)
     k_means.fit(features)
     labels = zip([f[0] for f in files], k_means.labels_)
@@ -327,7 +332,6 @@ if __name__ == '__main__':
     if args.i:
         digests = hash_path_async(args.i, conf)
         digests = sorted(digests, key=lambda i: i['name'])
-        pprint(digests)
         with open(args.o, 'wb') as fout:
             pickle.dump({'digests': digests, 'conf': conf},
                         fout)
