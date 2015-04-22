@@ -177,38 +177,40 @@ def score_digests(digests, krange, num_variants, render_graph):
 
 #------------------------------------------------------------------------------
 
-def calc_scores(labels, gold):
+def calc_scores(labels, indir):
     '''
     Calculate precision, recall and f1 by pairwise comparison of clustered
     labels and gold clusters pairs
     '''
-    n = len(labels)
-    tp = fn = fp = 0.
-    for i in range(n):
-        for j in range(n):
-            if labels[i][0] != labels[j][0]:
-                this_val = labels[i][1] == labels[j][1]
-                gold_val = gold[(labels[i][0], labels[j][0])]
-                if gold_val and this_val:
-                    tp += 1
-                elif gold_val and not this_val:
-                    fn += 1
-                elif not gold_val and this_val:
-                    fp += 1
-    p = tp / (tp + fp)
-    r = tp / (tp + fn)
-    f1 = 2 * p * r / (p + r)
-    print('p={:.2f}, r={:.2f}, f1={:.2f}'.format(p, r, f1))
+    with open(os.path.join(indir[0], 'gold_clusters.tmp')) as fin:
+        gold = pickle.load(fin)
+        n = len(labels)
+        tp = fn = fp = 0.
+        for i in range(n):
+            for j in range(n):
+                if labels[i][0] != labels[j][0]:
+                    this_val = labels[i][1] == labels[j][1]
+                    gold_val = gold[(labels[i][0], labels[j][0])]
+                    if gold_val and this_val:
+                        tp += 1
+                    elif gold_val and not this_val:
+                        fn += 1
+                    elif not gold_val and this_val:
+                        fp += 1
+        p = tp / (tp + fp)
+        r = tp / (tp + fn)
+        f1 = 2 * p * r / (p + r)
+        print('p={:.2f}, r={:.2f}, f1={:.2f}'.format(p, r, f1))
 
 #------------------------------------------------------------------------------
 
-def cluster_digests(digests, conf, gold):
+def cluster_digests(digests, conf, indir):
     '''
     Cluster digests using K-means algorithm
 
     :param digests: list of dicts with name and digest/sh attrs
     :param conf: hashing configuration
-    :param gold: gold clusters dict
+    :param indir: directory (wildcard) where to look for books
     '''
     # prepare data for clustering: extract every bit as a feature
     n = len(digests)
@@ -224,17 +226,15 @@ def cluster_digests(digests, conf, gold):
     k_means.fit(features)
     labels = zip([i['name'] for i in digests], k_means.labels_)
     print('Num clusters: {}'.format(max(k_means.labels_) + 1))
-    if gold:
-        calc_scores(labels, gold)
+    calc_scores(labels, indir)
 
 #------------------------------------------------------------------------------
         
-def run_baseline(indir, gold):
+def run_baseline(indir):
     '''
     Calculates scores based on baseline bag of words algorithm
 
-    :param indirs: directory (wildcard) where to look for books
-    :param gold: gold clusters dict
+    :param indir: directory (wildcard) where to look for books
     '''
     stopwords = nltk.corpus.stopwords.words('english')
     files = sorted(list(get_texts(indir)), key=lambda x: x[0])
@@ -254,8 +254,7 @@ def run_baseline(indir, gold):
     k_means.fit(features)
     labels = zip([f[0] for f in files], k_means.labels_)
     print('Num clusters: {}'.format(max(k_means.labels_) + 1))
-    if gold:
-        calc_scores(labels, gold)
+    calc_scores(labels, indir)
 
 #------------------------------------------------------------------------------
     
@@ -345,15 +344,8 @@ if __name__ == '__main__':
                                  args.num_variants,
                                  args.graph))
     elif args.clusters:
-        gold_clusters = None
-        if args.gold:
-            with open(args.gold, 'rb') as fin:
-                gold_clusters = pickle.load(fin)
         with open(args.clusters, 'rb') as fin:
             data = pickle.load(fin)
-            cluster_digests(data['digests'], data['conf'], gold_clusters)
-    elif args.baseline and args.gold:
-        gold_clusters = None
-        with open(args.gold, 'rb') as fin:
-            gold_clusters = pickle.load(fin)
-        run_baseline(args.baseline, gold_clusters)
+            cluster_digests(data['digests'], data['conf'], args.clusters)
+    elif args.baseline:
+        run_baseline(args.baseline)
