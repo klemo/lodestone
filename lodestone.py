@@ -8,8 +8,15 @@ lodestone (let's hash books)
 to generate book digests:
 $ python lodestone.py --i path_to_books_dir --o digests
 
+--k
+--l
+--remove_stopwords
+
 to analyze book digests:
-$ python lodestone.py --score digests --num_variants x --graph
+$ python lodestone.py --clusters digests --gold gold_clusters_file
+
+to do a baseline analysis:
+$ python lodestone.py --baseline path_to_books_dir --gold gold_clusters_file
 '''
 
 #------------------------------------------------------------------------------
@@ -26,6 +33,8 @@ import simhash
 import numpy as np
 #import matplotlib.pyplot as plt
 from sklearn import cluster
+import nltk
+from sklearn.feature_extraction.text import TfidfVectorizer
 import utils
 
 #------------------------------------------------------------------------------
@@ -93,6 +102,8 @@ def hash_path_async(path, conf):
 def get_texts(indirs):
     '''
     Yields filepaths for .txt files in a given directory list indirs
+
+    :param indirs: directory (wildcard) where to look for books
     '''
     for indir in indirs:
         LOG.debug('Processing: {}'.format(indir))
@@ -166,6 +177,31 @@ def score_digests(digests, krange, num_variants, render_graph):
 
 #------------------------------------------------------------------------------
 
+def calc_scores(labels, gold):
+    '''
+    Calculate precision, recall and f1 by pairwise comparison of clustered
+    labels and gold clusters pairs
+    '''
+    n = len(labels)
+    tp = fn = fp = 0.
+    for i in range(n):
+        for j in range(n):
+            if labels[i][0] != labels[j][0]:
+                this_val = labels[i][1] == labels[j][1]
+                gold_val = gold[(labels[i][0], labels[j][0])]
+                if gold_val and this_val:
+                    tp += 1
+                elif gold_val and not this_val:
+                    fn += 1
+                elif not gold_val and this_val:
+                    fp += 1
+    p = tp / (tp + fp)
+    r = tp / (tp + fn)
+    f1 = 2 * p * r / (p + r)
+    print('p={:.2f}, r={:.2f}, f1={:.2f}'.format(p, r, f1))
+
+#------------------------------------------------------------------------------
+
 def cluster_digests(digests, conf, gold):
     '''
     Cluster digests using K-means algorithm
@@ -188,25 +224,33 @@ def cluster_digests(digests, conf, gold):
     k_means.fit(features)
     labels = zip([i['name'] for i in digests], k_means.labels_)
     print('Num clusters: {}'.format(max(k_means.labels_) + 1))
-    # calculate precision, recall and f1
-    if gold_clusters:
-        tp = fn = fp = 0.
-        for i in range(n):
-            for j in range(n):
-                if labels[i][0] != labels[j][0]:
-                    this_val = labels[i][1] == labels[j][1]
-                    gold_val = gold[(labels[i][0], labels[j][0])]
-                    # tp
-                    if gold_val and this_val:
-                        tp += 1
-                    elif gold_val and not this_val:
-                        fn += 1
-                    elif not gold_val and this_val:
-                        fp += 1
-        p = tp / (tp + fp)
-        r = tp / (tp + fn)
-        f1 = 2 * p * r / (p + r)
-        print('p={:.2f}, r={:.2f}, f1={:.2f}'.format(p, r, f1))
+    if gold:
+        calc_scores(labels, gold)
+
+#------------------------------------------------------------------------------
+        
+def run_baseline(indir, gold):
+    '''
+    Calculates scores based on baseline bag of words algorithm
+
+    :param indirs: directory (wildcard) where to look for books
+    :param gold: gold clusters dict
+    '''
+    stopwords = nltk.corpus.stopwords.words('english')
+    files = sorted(list(get_texts(indir)), key=lambda x: x[0])
+    vectorizer = TfidfVectorizer(input='filename',
+                                 decode_error='ignore')
+    features = vectorizer.fit_transform([f[1] for f in files])
+    #tfidf_vectorizer.get_feature_names()
+    # number of clusters is equal to number of canonical texts
+    n_clusters = len(set([basename(f[0]) for f in files]))
+    print n_clusters
+    k_means = cluster.KMeans(n_clusters=n_clusters)
+    k_means.fit(features)
+    labels = zip([f[0] for f in files], k_means.labels_)
+    print('Num clusters: {}'.format(max(k_means.labels_) + 1))
+    if gold:
+        calc_scores(labels, gold)
 
 #------------------------------------------------------------------------------
     
@@ -247,7 +291,6 @@ if __name__ == '__main__':
                         required=False,
                         type=str)
     parser.add_argument('--clusters',
-                        dest='clusters',
                         help='input file for the cluster analysis',
                         default=None,
                         required=False,
@@ -257,6 +300,11 @@ if __name__ == '__main__':
                         default=None,
                         required=False,
                         type=str)
+    parser.add_argument('--baseline',
+                        help='input directory for the baseline analysis',
+                        default=None,
+                        required=False,
+                        nargs='*')
     parser.add_argument('--dist_k',
                         help='hamming distance to check',
                         default=None,
@@ -300,3 +348,8 @@ if __name__ == '__main__':
         with open(args.clusters, 'rb') as fin:
             data = pickle.load(fin)
             cluster_digests(data['digests'], data['conf'], gold_clusters)
+    elif args.baseline and args.gold:
+        gold_clusters = None
+        with open(args.gold, 'rb') as fin:
+            gold_clusters = pickle.load(fin)
+        run_baseline(args.baseline, gold_clusters)
