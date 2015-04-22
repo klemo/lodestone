@@ -20,11 +20,11 @@ import time
 import os
 import pickle
 from pprint import pprint
-from multiprocessing import Pool
+from multiprocessing import Pool, Process, Queue
 import csv
 import simhash
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from sklearn import cluster
 import utils
 
@@ -37,29 +37,24 @@ LOG = logging.getLogger('lodestone')
 NAME_SEPARATOR = '__'
 
 #------------------------------------------------------------------------------
-        
-def hash_filepath_worker(param):
+
+def hash_filepath_worker(filedesc, conf):
     '''
     Get fingerprint for given filepath. Use in dedicated worker process.
     '''
-    filedesc, conf = param
-    LOG.info('processing {}'.format(filedesc[0]))
-    try:
-        with open(filedesc[1], 'r') as fin:
-            sh = simhash.simhash(fin.read(),
-                                 k=conf['k'],
-                                 lenhash=conf['lenhash'],
-                                 remove_stopwords=conf['remove_stopwords'])
-            return {'name': filedesc[0],
-                    'sh': sh}
-    except Exception:
-        LOG.error('simhash', exc_info=True)
+    LOG.info('processing {}'.format(filedesc))
+    with open(filedesc[1], 'r') as fin:
+        sh = simhash.simhash(fin.read(),
+                             k=conf['k'],
+                             lenhash=conf['lenhash'],
+                             remove_stopwords=conf['remove_stopwords'])
+        return {'name': filedesc[0], 'sh': sh}
     return None
             
 #------------------------------------------------------------------------------
 
 @utils.timeit
-def hash_path_async(path, conf, num_processes=20):
+def hash_path_async(path, conf):
     '''
     Parallel calculation of fingerprints for all book files in the given
     directory.
@@ -67,13 +62,31 @@ def hash_path_async(path, conf, num_processes=20):
     :param path: directory containing ebook files
     :param num_processes: number of processes to spawn
     '''
-    texts = list(get_texts(path))
-    pool = Pool(processes=num_processes)
-    result = pool.map(hash_filepath_worker,
-                      zip(texts, [conf]*len(texts)))
-    pool.close()
-    pool.join()
-    return result
+    # sequential
+    return [hash_filepath_worker(text_name, conf)
+            for text_name in get_texts(path)]
+    # parallel pool
+    #pool = Pool(processes=8)
+    #results = [pool.apply_async(hash_filepath_worker, args=(text, conf))
+    #           for text in get_texts(path)]
+    #output = [p.get() for p in results]
+    #return output
+    # parallel workers
+    # workers = 10
+    # procs = []
+    # inqueue = Queue()
+    # outqueue = Queue()
+    # for text_name in get_texts(path):
+    #     inqueue.put(text_name)
+    # for w in xrange(workers):
+    #     p = Process(target=hash_filepath_worker, args=(w, conf, inqueue, outqueue))
+    #     p.start()
+    #     procs.append(p)
+    #     inqueue.put('/')
+    # [p.join() for p in procs]
+    # outqueue.put('/')
+    # output = [result for result in iter(outqueue.get, '/')]
+    # return output
 
 #------------------------------------------------------------------------------
 
@@ -166,7 +179,7 @@ def cluster_digests(digests, conf, gold):
     lenhash = conf['lenhash']
     features = np.zeros(shape=(n, lenhash))
     for i in range(n):
-        bin_str = bin(digests[i]['sh'])[2:]
+        bin_str = format(digests[i]['sh'], '0{}b'.format(conf['lenhash']))
         for j in range(lenhash):
             features[i][j] = float(bin_str[j])
     # number of clusters is equal to number of canonical texts
@@ -193,7 +206,7 @@ def cluster_digests(digests, conf, gold):
         p = tp / (tp + fp)
         r = tp / (tp + fn)
         f1 = 2 * p * r / (p + r)
-        print('p={}, r={}, f1={}'.format(p, r, f1))
+        print('p={:.2f}, r={:.2f}, f1={:.2f}'.format(p, r, f1))
 
 #------------------------------------------------------------------------------
     
@@ -266,6 +279,7 @@ if __name__ == '__main__':
     if args.i:
         digests = hash_path_async(args.i, conf)
         digests = sorted(digests, key=lambda i: i['name'])
+        pprint(digests)
         with open(args.o, 'wb') as fout:
             pickle.dump({'digests': digests, 'conf': conf},
                         fout)
