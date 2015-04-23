@@ -25,6 +25,7 @@ import string
 import shutil
 from collections import defaultdict
 import utils
+import nltk
 
 #------------------------------------------------------------------------------
 
@@ -36,7 +37,29 @@ NAME_SEPARATOR = '__'
 LETTERS = string.ascii_letters + string.digits
 
 #------------------------------------------------------------------------------
-            
+
+# (insert|delete|edit, char, probability)
+char_mutations = [
+    ('i',   ord(' '),            0.32), # space insertion
+    ('d',   ord(' '),            0.06), # space deletion
+    ('i',   None,                0.04), # any char insertion
+    ('d',   None,                0.05), # any char deletion
+    ('e',   (1, 1),              0.25), # 1:1 edit
+    ('e',   (1, 2),              0.06), # 1:2 edit
+    ('e',   (2, 1),              0.13), # 2:1 edit
+    ('e',   (2, 2),              0.08), # 2:2 edit
+    ('ti',  None,                0.005), # random text insertion
+    ('td',  None,                0.005), # random text deletion
+    ]
+
+# create discrete distribution for characher mutations
+MUT_DIST = stats.rv_discrete(
+    name='cmut',
+    values=(numpy.arange(len(char_mutations)),
+            [i[2] for i in char_mutations]))
+    
+#------------------------------------------------------------------------------
+
 def basename(fullname):
         '''
         let's assume fullname is always well formed
@@ -82,24 +105,9 @@ def corrupt_ocr(raw_text, p):
         # TODO: digits should be less probable, not equally
         return random.choice(LETTERS)
     
-    # (insert|delete|edit, char, probability)
-    # None -> any char
-    char_mutations = [
-        ('i',  ord(' '),            0.32), # space insert
-        ('d',  ord(' '),            0.06), # space deletion
-        ('i',  None,                0.04), # any char insert
-        ('d',  None,                0.05), # any char delete
-        ('e',  (1, 1),              0.25), # 1:1 edit
-        ('e',  (1, 2),              0.06), # 1:2 edit
-        ('e',  (2, 1),              0.14), # 2:1 edit
-        ('e',  (2, 2),              0.08), # 2:2 edit
-        ]
-    # create discrete distribution for characher mutations
-    mut_dist = stats.rv_discrete(
-        name='cmut',
-        values=(numpy.arange(len(char_mutations)),
-                [i[2] for i in char_mutations]))
     #words = text.split()
+    tokens = nltk.word_tokenize(raw_text)
+    lang_model = nltk.Text(tokens)
     text = bytearray(raw_text)
     text_length = len(text)
     num_to_change = int(p*text_length)
@@ -107,7 +115,7 @@ def corrupt_ocr(raw_text, p):
     mutations = defaultdict(int)
     while num_changed < num_to_change:
         # generate random mutation
-        mut_type, mut_char, mut_prob = char_mutations[mut_dist.rvs()]
+        mut_type, mut_char, mut_prob = char_mutations[MUT_DIST.rvs()]
         #mutations[(mut_type, mut_char, mut_prob)] += 1
         if not mut_char:
             # any char; get at random
@@ -145,7 +153,16 @@ def corrupt_ocr(raw_text, p):
                 if old_char == 2:
                     pos_end = pos + 2
                 text[pos:pos_end] = subst
-                num_changed += 1 
+                num_changed += 1
+        # INSERT RANDOM TEXT
+        elif mut_type == 'ti':
+            pass
+            #rnd_text = lang_model.generate(random.randrange(2, 512))
+            #text[pos:pos] = rnd_text
+        # DELETE RANDOM TEXT
+        elif mut_type == 'td':
+            pass
+            #del text[pos:pos+random.randrange(2, 128)]
     return str(text)
 
 #------------------------------------------------------------------------------
@@ -182,7 +199,7 @@ def gen_corrupted_texts(indir, outdir, num_processes=50):
     os.makedirs(outdir)
     pool = Pool(processes=num_processes)
     # corrupt files in range:
-    corrupt_range = [p for p in range(15, 55, 5)]
+    corrupt_range = [p for p in range(10, 55, 5)]
     numd = len(corrupt_range)
     LOG.info('Will generate {} versions of each file'.format(numd))
     wfiles = []

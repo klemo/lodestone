@@ -34,7 +34,7 @@ import numpy as np
 #import matplotlib.pyplot as plt
 from sklearn import cluster
 import nltk
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 import utils
 
 #------------------------------------------------------------------------------
@@ -220,14 +220,22 @@ def cluster_digests(digests, conf, gold):
             features[i][j] = float(bin_str[j])
     # number of clusters is equal to number of canonical texts
     n_clusters = len(set([basename(i['name']) for i in digests]))
-    k_means = cluster.KMeans(n_clusters=n_clusters)
+    # initial centers are canonical texts themselves
+    # initial_centers = np.zeros(shape=(n_clusters, lenhash))
+    # ci = 0
+    # for i in range(n):
+    #     if digests[i]['name'] == basename(digests[i]['name']) + '__':
+    #         initial_centers[ci] = features[i]
+    #         ci += 1
+    k_means = cluster.KMeans(n_clusters=n_clusters, n_jobs=3)
+                             #init=initial_centers)
     k_means.fit(features)
     labels = zip([i['name'] for i in digests], k_means.labels_)
     print('Num clusters: {}'.format(max(k_means.labels_) + 1))
     calc_scores(labels, gold)
 
 #------------------------------------------------------------------------------
-        
+
 def run_baseline(indir, gold):
     '''
     Calculates scores based on baseline bag of words algorithm
@@ -237,18 +245,22 @@ def run_baseline(indir, gold):
     '''
     stopwords = nltk.corpus.stopwords.words('english')
     files = sorted(list(get_texts(indir)), key=lambda x: x[0])
-    vectorizer = TfidfVectorizer(input='filename',
+    vectorizer = CountVectorizer(input='filename',
                                  decode_error='ignore',
-                                 max_features=100000,
-                                 max_df=0.8,
-                                 min_df=0.2,
+                                 max_features=200000,
+                                 #analyzer='word',
+                                 #ngram_range=(1,1),
+                                 #lowercase=False,
+                                 #binary=True,
+                                 #max_df=0.8,
+                                 #min_df=0.2,
                                  #stop_words='english',
-                                 #use_idf=True,
                                  )
     features = vectorizer.fit_transform([f[1] for f in files])
+    print features.shape
     # number of clusters is equal to number of canonical texts
     n_clusters = len(set([basename(f[0]) for f in files]))
-    k_means = cluster.KMeans(n_clusters=n_clusters)
+    k_means = cluster.KMeans(n_clusters=n_clusters, n_jobs=3)
     k_means.fit(features)
     labels = zip([f[0] for f in files], k_means.labels_)
     print('Num clusters: {}'.format(max(k_means.labels_) + 1))
