@@ -5,9 +5,14 @@
 '''
 lodestone (let's hash books)
 
-generates synthetic text dataset by corrupting referent dataset with OCR errors
+generates synthetic text dataset by corrupting referent dataset with random
+errors; errors simulate ocr confusions and random edits
 
-$ python gen.py --i ref_texts/ --o syn_texts/
+to generate synthetic dataset:
+$ python synthesis.py --gen --i indir --o outdir
+
+to write gold clusters membership pairs:
+$ python synthesis.py --gold --i indir
 '''
 
 #------------------------------------------------------------------------------
@@ -68,10 +73,15 @@ def basename(fullname):
 
 #------------------------------------------------------------------------------
 
-def get_texts(indirs):
+def get_texts(indirs, read_files=True):
     '''
     Yields texts for .txt files in a given directory list indirs
+
+    :param indirs: list of directories
+    :param read_files: if file contents should be yielded
     '''
+    if type(indirs) == str:
+        indirs = [indirs]
     for indir in indirs:
         LOG.debug('Processing: {}'.format(indir))
         if not os.path.isdir(indir):
@@ -85,8 +95,11 @@ def get_texts(indirs):
             if ext != '.txt':
                 LOG.debug('Skipping file: {}'.format(filename))
                 continue
-            with open(filepath, 'r') as fin:
-                yield name, fin.read()
+            if read_files:
+                with open(filepath, 'r') as fin:
+                    yield name, fin.read()
+            else:
+                yield name
 
 #------------------------------------------------------------------------------
 
@@ -106,8 +119,8 @@ def corrupt_ocr(raw_text, p):
         return random.choice(LETTERS)
     
     #words = text.split()
-    tokens = nltk.word_tokenize(raw_text)
-    lang_model = nltk.Text(tokens)
+    #tokens = nltk.word_tokenize(raw_text)
+    #lang_model = nltk.Text(tokens)
     text = bytearray(raw_text)
     text_length = len(text)
     num_to_change = int(p*text_length)
@@ -218,15 +231,24 @@ def gen_corrupted_texts(indir, outdir, num_processes=50):
         wfiles.extend(result)
     pool.close()
     pool.join()
-    # write gold clusters
+
+#------------------------------------------------------------------------------
+
+def write_gold_clusters(indir):
+    '''
+    Write gold cluster pairs to file
+    '''
+    gold_filename = 'gold_clusters.tmp'
+    files = list(get_texts(indir, read_files=False))
     scores = {}
-    n = len(wfiles)
+    n = len(files)
     for i in range(n):
         for j in range(n):
-            if wfiles[i] != wfiles[j]:
-                scores[(wfiles[i], wfiles[j])] = \
-                    basename(wfiles[i]) == basename(wfiles[j])
-    with open(os.path.join(outdir, 'gold_clusters.tmp'), 'w') as goldout:
+            if files[i] != files[j]:
+                key = sorted((files[i], files[j]))
+                scores[', '.join(key)] = \
+                    basename(files[i]) == basename(files[j])
+    with open(os.path.join(indir[0], gold_filename), 'w') as goldout:
         pickle.dump(scores, goldout)
 
 #------------------------------------------------------------------------------
@@ -243,7 +265,6 @@ if __name__ == '__main__':
     parser.add_argument('--o',
                         dest='o',
                         help='path to output directory',
-                        default='out',
                         required=False,
                         type=str)
     parser.add_argument('--p',
@@ -251,8 +272,23 @@ if __name__ == '__main__':
                         help='percent of character corruption',
                         required=False,
                         type=float)
+    parser.add_argument('--gen',
+                        help='generate corrupted files',
+                        default=False,
+                        const=True,
+                        nargs='?')
+    parser.add_argument('--gold',
+                        help='write gold clusters file',
+                        default=False,
+                        const=True,
+                        nargs='?')
     args = parser.parse_args()
-    if args.i:
+    if args.gen and args.i and args.o:
         gen_corrupted_texts(args.i, args.o)
+    elif args.gold and args.i:
+        write_gold_clusters(args.i)
     elif args.p:
         print(corrupt_ocr('test ' * 100, args.p))
+    else:
+        print('unknown combination of params')
+    

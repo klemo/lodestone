@@ -183,18 +183,25 @@ def calc_scores(labels, gold):
     labels and gold clusters pairs
     '''
     n = len(labels)
-    tp = fn = fp = 0.
+    tp = fn = fp = 0
+    seen = set()
     for i in range(n):
         for j in range(n):
             if labels[i][0] != labels[j][0]:
-                this_val = labels[i][1] == labels[j][1]
-                gold_val = gold[(labels[i][0], labels[j][0])]
-                if gold_val and this_val:
-                    tp += 1
-                elif gold_val and not this_val:
-                    fn += 1
-                elif not gold_val and this_val:
-                    fp += 1
+                key = sorted((labels[i][0], labels[j][0]))
+                skey = ', '.join(key)
+                if skey in seen:
+                    continue
+                else:
+                    seen.add(skey)
+                    gold_val = gold[skey]
+                    this_val = labels[i][1] == labels[j][1]
+                    if gold_val and this_val:
+                        tp += 1
+                    elif gold_val and not this_val:
+                        fn += 1
+                    elif not gold_val and this_val:
+                        fp += 1
     p = tp / (tp + fp)
     r = tp / (tp + fn)
     f1 = 2 * p * r / (p + r)
@@ -257,7 +264,6 @@ def run_baseline(indir, gold):
                                  #stop_words='english',
                                  )
     features = vectorizer.fit_transform([f[1] for f in files])
-    print features.shape
     # number of clusters is equal to number of canonical texts
     n_clusters = len(set([basename(f[0]) for f in files]))
     k_means = cluster.KMeans(n_clusters=n_clusters, n_jobs=3)
