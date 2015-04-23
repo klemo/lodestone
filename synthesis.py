@@ -31,6 +31,7 @@ import shutil
 from collections import defaultdict
 import utils
 import nltk
+import matplotlib.pyplot as plt
 
 #------------------------------------------------------------------------------
 
@@ -257,13 +258,18 @@ def do_analysis(indir):
     '''
     Extracts some useful info from the generated synthetic dataset
     '''
-    files = list(get_texts(indir))
-    canonical = set([basename(f[0]) for f in files])
+    files = list(get_texts(indir, read_files=False))
+    canonical = set([basename(f) for f in files])
     n_canonical = len(canonical)
     print('Num of canonical texts: {}'.format(n_canonical))
     print('Num of texts: {}'.format(len(files)))
-    for c in canonical:
-        print c
+    word_count = {c:[] for c in canonical}
+    for name, text in get_texts(indir):
+        word_count[basename(name)].append(len(text.split()))
+    for cname in word_count:
+        sizes = sorted(word_count[cname])
+        plt.plot(sizes, 'r-') 
+    plt.show()
 
 #------------------------------------------------------------------------------
     
