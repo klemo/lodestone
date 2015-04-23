@@ -183,7 +183,7 @@ def calc_scores(labels, gold):
     labels and gold clusters pairs
     '''
     n = len(labels)
-    tp = fn = fp = 0
+    tp = fn = fp = 0.
     seen = set()
     for i in range(n):
         for j in range(n):

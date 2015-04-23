@@ -252,6 +252,20 @@ def write_gold_clusters(indir):
         pickle.dump(scores, goldout)
 
 #------------------------------------------------------------------------------
+
+def do_analysis(indir):
+    '''
+    Extracts some useful info from the generated synthetic dataset
+    '''
+    files = list(get_texts(indir))
+    canonical = set([basename(f[0]) for f in files])
+    n_canonical = len(canonical)
+    print('Num of canonical texts: {}'.format(n_canonical))
+    print('Num of texts: {}'.format(len(files)))
+    for c in canonical:
+        print c
+
+#------------------------------------------------------------------------------
     
 if __name__ == '__main__':
     logging.basicConfig(format='%(levelname)s : %(message)s',
@@ -282,13 +296,19 @@ if __name__ == '__main__':
                         default=False,
                         const=True,
                         nargs='?')
+    parser.add_argument('--analysis',
+                        help='print some dataset insights',
+                        default=False,
+                        const=True,
+                        nargs='?')
     args = parser.parse_args()
     if args.gen and args.i and args.o:
         gen_corrupted_texts(args.i, args.o)
     elif args.gold and args.i:
         write_gold_clusters(args.i)
+    elif args.analysis and args.i:
+        do_analysis(args.i)
     elif args.p:
         print(corrupt_ocr('test ' * 100, args.p))
     else:
         print('unknown combination of params')
-    
