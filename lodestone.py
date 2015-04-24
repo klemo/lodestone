@@ -132,7 +132,7 @@ def score_digests(digests, num_variants, render_graph):
                 digests[i]['sh'], digests[j]['sh'])
     # calc prec/recall for different k ----------------------------------------
     scores = []
-    krange = range(0, 45)
+    krange = range(4, 50, 2)
     for k in krange:
         # number of true/false positives
         all_p = []
@@ -155,8 +155,8 @@ def score_digests(digests, num_variants, render_graph):
             all_r.append(r)
         avg_p = np.mean(all_p)
         avg_r = np.mean(all_r)
-        print('Score for Hamming with max k={}: p={:.2f}, r={:.2f}'.format(
-                k, avg_p, avg_r))
+        print('k={}: p={:.2f}, r={:.2f}, f1={:.2f}'.format(
+                k, avg_p, avg_r, 2*avg_p*avg_r/(avg_p+avg_r)))
         scores.append((k, avg_p, avg_r))
     #--------------------------------------------------------------------------
     if render_graph:
