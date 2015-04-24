@@ -8,15 +8,16 @@ lodestone (let's hash books)
 to generate book digests:
 $ python lodestone.py --i path_to_books_dir --o digests
 
---k
---l
---remove_stopwords
+additional params: --k --l --remove_stopwords
 
 to analyze book digests:
 $ python lodestone.py --clusters digests --gold gold_clusters_file
 
 to do a baseline analysis:
 $ python lodestone.py --baseline path_to_books_dir --gold gold_clusters_file
+
+to do a query score analysis:
+$ python lodestone.py --score path_to_digests_csv --gold gold_clusters_file
 '''
 
 #------------------------------------------------------------------------------
@@ -25,13 +26,13 @@ import argparse
 import logging
 import time
 import os
+import sys
 import pickle
 from pprint import pprint
-from multiprocessing import Pool, Process, Queue
 import csv
 import simhash
 import numpy as np
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from sklearn import cluster
 import nltk
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
@@ -46,10 +47,39 @@ LOG = logging.getLogger('lodestone')
 NAME_SEPARATOR = '__'
 
 #------------------------------------------------------------------------------
+            
+def basename(fullname):
+        '''
+        let's assume fullname is always well formed:
+        basenameNAME_SEPARATORsuffix
+        '''
+        return fullname.split(NAME_SEPARATOR)[0]
 
+#------------------------------------------------------------------------------
+
+def get_texts(indirs):
+    '''
+    Yields filepaths for .txt files in a given directory list indirs
+
+    :param indirs: directory (wildcard) where to look for books
+    '''
+    for indir in indirs:
+        LOG.debug('Processing: {}'.format(indir))
+        for filename in os.listdir(indir):
+            filepath = os.path.join(indir, filename)
+            # skip directories
+            if os.path.isdir(filepath):
+                continue
+            name, ext = os.path.splitext(filename)
+            if ext != '.txt':
+                continue
+            yield name, filepath
+
+#------------------------------------------------------------------------------
+            
 def hash_filepath_worker(filedesc, conf):
     '''
-    Get fingerprint for given filepath. Use in dedicated worker process.
+    Get fingerprint for given filepath
     '''
     LOG.info('processing {}'.format(filedesc))
     with open(filedesc[1], 'r') as fin:
@@ -74,83 +104,41 @@ def hash_path_async(path, conf):
     # sequential
     return [hash_filepath_worker(text_name, conf)
             for text_name in get_texts(path)]
-    # parallel pool
-    #pool = Pool(processes=8)
-    #results = [pool.apply_async(hash_filepath_worker, args=(text, conf))
-    #           for text in get_texts(path)]
-    #output = [p.get() for p in results]
-    #return output
-    # parallel workers
-    # workers = 10
-    # procs = []
-    # inqueue = Queue()
-    # outqueue = Queue()
-    # for text_name in get_texts(path):
-    #     inqueue.put(text_name)
-    # for w in xrange(workers):
-    #     p = Process(target=hash_filepath_worker, args=(w, conf, inqueue, outqueue))
-    #     p.start()
-    #     procs.append(p)
-    #     inqueue.put('/')
-    # [p.join() for p in procs]
-    # outqueue.put('/')
-    # output = [result for result in iter(outqueue.get, '/')]
-    # return output
 
 #------------------------------------------------------------------------------
 
-def get_texts(indirs):
-    '''
-    Yields filepaths for .txt files in a given directory list indirs
-
-    :param indirs: directory (wildcard) where to look for books
-    '''
-    for indir in indirs:
-        LOG.debug('Processing: {}'.format(indir))
-        for filename in os.listdir(indir):
-            filepath = os.path.join(indir, filename)
-            # skip directories
-            if os.path.isdir(filepath):
-                continue
-            name, ext = os.path.splitext(filename)
-            if ext != '.txt':
-                continue
-            yield name, filepath
-
-#------------------------------------------------------------------------------
-            
-def basename(fullname):
-        '''
-        let's assume fullname is always well formed
-        '''
-        return fullname.split(NAME_SEPARATOR)[0]
-
-#------------------------------------------------------------------------------
-
-def score_digests(digests, krange, num_variants, render_graph):
+def score_digests(digests, num_variants, render_graph):
     '''
     Calculate distance for each pair of digests and score precision and recall
+
+    :param digests: list of name,sh objects
+    :param num_variants: number of duplicates for each book
+    :param render_graph: if graph should be rendered
     '''
     if not num_variants:
         print('Must give --num_variants')
         return
-    
+
     n = len(digests)
-    # init distance matrix
+    print('Calculating distance matrix for {} digests'.format(n))
+    # init distance matrix ----------------------------------------------------
     dmatrix = np.zeros(shape=(n,n))
     # calculate distance matrix, maybe we'll need it later
     for i in range(n):
+        sys.stdout.write('\r{}/{}'.format(i+1, n))
+        sys.stdout.flush()
         for j in range(n):
             dmatrix[i][j] = simhash.hamming(
                 digests[i]['sh'], digests[j]['sh'])
-    if not krange:
-        krange = range(10, 50, 5)
+    # calc prec/recall for different k ----------------------------------------
     scores = []
+    krange = range(0, 45)
     for k in krange:
         # number of true/false positives
-        tp = 0
-        fp = 0
+        all_p = []
+        all_r = []
         for i in range(n):
+            tp = fp = 0.
             similars = [j for j, d in enumerate(dmatrix[i])
                         if digests[j]['name'] != digests[i]['name'] and d <= k]
             for s in similars:
@@ -158,16 +146,24 @@ def score_digests(digests, krange, num_variants, render_graph):
                     tp += 1
                 else:
                     fp += 1
-        if not tp and not fp:
-            continue
-        precision = float(tp)/(tp + fp)
-        recall = float(tp)/(num_variants*n) # total number of duplicates
-        scores.append((k, precision, recall))
+            if not tp and not fp:
+                #LOG.info('No results for k={}'.format(k))
+                continue
+            p = tp / (tp + fp)
+            r = tp / num_variants
+            all_p.append(p)
+            all_r.append(r)
+        avg_p = np.mean(all_p)
+        avg_r = np.mean(all_r)
+        print('Score for Hamming with max k={}: p={:.2f}, r={:.2f}'.format(
+                k, avg_p, avg_r))
+        scores.append((k, avg_p, avg_r))
+    #--------------------------------------------------------------------------
     if render_graph:
         # precision graph
-        pyt = [precision for _, precision, _ in scores]
+        pyt = [p for _, p, _ in scores]
         # recall graph
-        ryt = [recall for _, _, recall in scores]
+        ryt = [r for _, _, r in scores]
         xt = [k for k, _, _  in scores]
         plt.plot(pyt, 'r-')
         plt.plot(ryt, 'b-')
@@ -252,16 +248,11 @@ def run_baseline(indir, gold):
     '''
     stopwords = nltk.corpus.stopwords.words('english')
     files = sorted(list(get_texts(indir)), key=lambda x: x[0])
-    vectorizer = CountVectorizer(input='filename',
+    vectorizer = TfidfVectorizer(input='filename',
                                  decode_error='ignore',
-                                 max_features=200000,
-                                 #analyzer='word',
-                                 #ngram_range=(1,1),
-                                 #lowercase=False,
-                                 #binary=True,
-                                 #max_df=0.8,
-                                 #min_df=0.2,
-                                 #stop_words='english',
+                                 max_features=20000,
+                                 stop_words='english',
+                                 use_idf=False,
                                  )
     features = vectorizer.fit_transform([f[1] for f in files])
     # number of clusters is equal to number of canonical texts
@@ -325,11 +316,6 @@ if __name__ == '__main__':
                         default=None,
                         required=False,
                         nargs='*')
-    parser.add_argument('--dist_k',
-                        help='hamming distance to check',
-                        default=None,
-                        required=False,
-                        type=int)
     parser.add_argument('--num_variants',
                         help='num of book variants',
                         default=None,
@@ -344,27 +330,40 @@ if __name__ == '__main__':
     conf = {'k': args.conf_k,
             'lenhash': args.conf_lenhash,
             'remove_stopwords': args.conf_remove_stopwords}
+    #--------------------------------------------------------------------------
     if args.i:
         digests = hash_path_async(args.i, conf)
         digests = sorted(digests, key=lambda i: i['name'])
         with open(args.o, 'wb') as fout:
             pickle.dump({'digests': digests, 'conf': conf},
                         fout)
+        with open('digests.csv', 'w') as csvfile:
+            csvwriter = csv.writer(csvfile, delimiter=' ')
+            for digest in digests:
+                csvwriter.writerow([digests['name'], digests['sh']])
+    #--------------------------------------------------------------------------
     elif args.score:
-        with open(args.score, 'rb') as fin:
-            krange = []
-            if args.dist_k:
-                krange = [args.dist_k]
-            pprint(score_digests(pickle.load(fin),
-                                 krange,
-                                 args.num_variants,
-                                 args.graph))
+        with open(args.score, 'r') as csvfile:
+            csvreader = csv.reader(csvfile, delimiter=' ')
+            digests = []
+            for row in csvreader:
+                digests.append({'name': row[0], 'sh': int(row[1], 16)})
+            score_digests(
+                digests, args.num_variants, args.graph)
+        # with open(args.score, 'rb') as fin:
+        #     pprint(score_digests(pickle.load(fin),
+        #                          krange,
+        #                          args.num_variants,
+        #                          args.graph))
+    #--------------------------------------------------------------------------
     elif args.clusters and args.gold:
         with open(args.gold, 'rb') as fin:
             gold_clusters = pickle.load(fin)
             with open(args.clusters, 'rb') as fin:
                 data = pickle.load(fin)
                 cluster_digests(data['digests'], data['conf'], gold_clusters)
+    #--------------------------------------------------------------------------
     elif args.baseline:
-        with open(os.path.join(args.baseline[0], 'gold_clusters.tmp'), 'r') as fin:
+        with open(
+            os.path.join(args.baseline[0], 'gold_clusters.tmp'), 'r') as fin:
             run_baseline(args.baseline, pickle.load(fin))
