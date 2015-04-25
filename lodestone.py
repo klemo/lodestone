@@ -32,7 +32,7 @@ from pprint import pprint
 import csv
 import simhash
 import numpy as np
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from sklearn import cluster
 import nltk
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
@@ -107,7 +107,7 @@ def hash_path_async(path, conf):
 
 #------------------------------------------------------------------------------
 
-def score_digests(digests, num_variants, render_graph):
+def score_digests(digests, num_variants, max_bits, render_graph):
     '''
     Calculate distance for each pair of digests and score precision and recall
 
@@ -133,7 +133,7 @@ def score_digests(digests, num_variants, render_graph):
     print('\n')
     # calc prec/recall for different k ----------------------------------------
     scores = []
-    krange = range(3, 128, 3)
+    krange = range(1, max_bits, 5)
     for k in krange:
         # number of true/false positives
         all_p = []
@@ -142,6 +142,8 @@ def score_digests(digests, num_variants, render_graph):
             tp = fp = 0.
             similars = [j for j, d in enumerate(dmatrix[i])
                         if digests[j]['name'] != digests[i]['name'] and d <= k]
+            #if k == 20:
+            #    print('{} --> {}'.format(i, digests[i]['name']), [digests[s]['name'] for s in similars])
             for s in similars:
                 if basename(digests[i]['name']) == basename(digests[s]['name']):
                     tp += 1
@@ -150,8 +152,11 @@ def score_digests(digests, num_variants, render_graph):
             if not tp and not fp:
                 #LOG.info('No results for k={}'.format(k))
                 continue
-            p = tp / (tp + fp)
-            r = tp / num_variants
+                #p = 1.
+                #r = 0.
+            else:
+                p = tp / (tp + fp)
+                r = tp / num_variants
             all_p.append(p)
             all_r.append(r)
         avg_p = np.mean(all_p)
@@ -161,14 +166,16 @@ def score_digests(digests, num_variants, render_graph):
         scores.append((k, avg_p, avg_r))
     #--------------------------------------------------------------------------
     if render_graph:
-        # precision graph
-        pyt = [p for _, p, _ in scores]
-        # recall graph
-        ryt = [r for _, _, r in scores]
-        xt = [k for k, _, _  in scores]
-        plt.plot(pyt, 'r-')
-        plt.plot(ryt, 'b-')
-        plt.xticks(range(1, len(pyt)+1), xt)
+        pyt = [p for _, p, _ in scores] # precision graph
+        ryt = [r for _, _, r in scores] # recall graph
+        xt = [k for k, _, _  in scores] # x-axis max k bits
+        line_precision, = plt.plot(pyt, 'r-', label='precision', linestyle='--')
+        line_recall, = plt.plot(ryt, 'b-', label='recall')
+        plt.legend()
+        plt.xticks(np.arange(min(xt), max(xt)+1, 5.0))
+        plt.xlabel('k-bit distance')
+        plt.ylabel('Precision/recall')
+        plt.title('Precision/recall for {} books'.format(n))
         plt.show()
     return scores
 
@@ -322,6 +329,11 @@ if __name__ == '__main__':
                         default=None,
                         required=False,
                         type=int)
+    parser.add_argument('--max_bits',
+                        help='hamming bit range',
+                        default=64,
+                        required=False,
+                        type=int)
     parser.add_argument('--graph',
                         help='render graph',
                         default=False,
@@ -350,7 +362,7 @@ if __name__ == '__main__':
             for row in csvreader:
                 digests.append({'name': row[0], 'sh': int(row[1], 16)})
             score_digests(
-                digests, args.num_variants, args.graph)
+                digests, args.num_variants, args.max_bits, args.graph)
         # with open(args.score, 'rb') as fin:
         #     pprint(score_digests(pickle.load(fin),
         #                          krange,
