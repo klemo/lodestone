@@ -32,7 +32,7 @@ from pprint import pprint
 import csv
 import simhash
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from sklearn import cluster
 import nltk
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
@@ -130,9 +130,10 @@ def score_digests(digests, num_variants, render_graph):
         for j in range(n):
             dmatrix[i][j] = simhash.hamming(
                 digests[i]['sh'], digests[j]['sh'])
+    print('\n')
     # calc prec/recall for different k ----------------------------------------
     scores = []
-    krange = range(4, 50, 2)
+    krange = range(3, 128, 3)
     for k in krange:
         # number of true/false positives
         all_p = []
@@ -281,7 +282,7 @@ if __name__ == '__main__':
     parser.add_argument('--k',
                         dest='conf_k',
                         help='k-gram',
-                        default=1,
+                        default=256,
                         required=False,
                         type=int)
     parser.add_argument('--l',
@@ -334,13 +335,13 @@ if __name__ == '__main__':
     if args.i:
         digests = hash_path_async(args.i, conf)
         digests = sorted(digests, key=lambda i: i['name'])
-        with open(args.o, 'wb') as fout:
-            pickle.dump({'digests': digests, 'conf': conf},
-                        fout)
-        with open('digests.csv', 'w') as csvfile:
+        #with open(args.o, 'wb') as fout:
+        #    pickle.dump({'digests': digests, 'conf': conf},
+        #                fout)
+        with open(args.o, 'w') as csvfile:
             csvwriter = csv.writer(csvfile, delimiter=' ')
             for digest in digests:
-                csvwriter.writerow([digests['name'], digests['sh']])
+                csvwriter.writerow([digest['name'], digest['sh']])
     #--------------------------------------------------------------------------
     elif args.score:
         with open(args.score, 'r') as csvfile:
