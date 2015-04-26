@@ -133,7 +133,7 @@ def score_digests(digests, num_variants, max_bits, render_graph):
     print('\n')
     # calc prec/recall for different k ----------------------------------------
     scores = []
-    krange = range(1, max_bits, 5)
+    krange = range(0, max_bits, 5)
     for k in krange:
         # number of true/false positives
         all_p = []
@@ -142,7 +142,7 @@ def score_digests(digests, num_variants, max_bits, render_graph):
             tp = fp = 0.
             similars = [j for j, d in enumerate(dmatrix[i])
                         if digests[j]['name'] != digests[i]['name'] and d <= k]
-            #if k == 20:
+            #if k == 30:
             #    print('{} --> {}'.format(i, digests[i]['name']), [digests[s]['name'] for s in similars])
             for s in similars:
                 if basename(digests[i]['name']) == basename(digests[s]['name']):
@@ -172,7 +172,7 @@ def score_digests(digests, num_variants, max_bits, render_graph):
         line_precision, = plt.plot(pyt, 'r-', label='precision', linestyle='--')
         line_recall, = plt.plot(ryt, 'b-', label='recall')
         plt.legend()
-        plt.xticks(np.arange(min(xt), max(xt)+1, 5.0))
+        plt.xticks(np.arange(min(xt), max(xt)+1, 15.0))
         plt.xlabel('k-bit distance')
         plt.ylabel('Precision/recall')
         plt.title('Precision/recall for {} books'.format(n))
@@ -232,14 +232,14 @@ def cluster_digests(digests, conf, gold):
     # number of clusters is equal to number of canonical texts
     n_clusters = len(set([basename(i['name']) for i in digests]))
     # initial centers are canonical texts themselves
-    # initial_centers = np.zeros(shape=(n_clusters, lenhash))
-    # ci = 0
-    # for i in range(n):
-    #     if digests[i]['name'] == basename(digests[i]['name']) + '__':
-    #         initial_centers[ci] = features[i]
-    #         ci += 1
-    k_means = cluster.KMeans(n_clusters=n_clusters, n_jobs=3)
-                             #init=initial_centers)
+    initial_centers = np.zeros(shape=(n_clusters, lenhash))
+    ci = 0
+    for i in range(n):
+        if digests[i]['name'] == basename(digests[i]['name']) + '__':
+            initial_centers[ci] = features[i]
+            ci += 1
+    k_means = cluster.KMeans(n_clusters=n_clusters, n_jobs=3,
+                             init=initial_centers)
     k_means.fit(features)
     labels = zip([i['name'] for i in digests], k_means.labels_)
     print('Num clusters: {}'.format(max(k_means.labels_) + 1))
@@ -289,7 +289,7 @@ if __name__ == '__main__':
     parser.add_argument('--k',
                         dest='conf_k',
                         help='k-gram',
-                        default=256,
+                        default=1,
                         required=False,
                         type=int)
     parser.add_argument('--l',
@@ -369,12 +369,20 @@ if __name__ == '__main__':
         #                          args.num_variants,
         #                          args.graph))
     #--------------------------------------------------------------------------
-    elif args.clusters and args.gold:
-        with open(args.gold, 'rb') as fin:
-            gold_clusters = pickle.load(fin)
-            with open(args.clusters, 'rb') as fin:
-                data = pickle.load(fin)
-                cluster_digests(data['digests'], data['conf'], gold_clusters)
+    elif args.clusters and args.gold and conf:
+        with open(args.clusters, 'r') as csvfile:
+            csvreader = csv.reader(csvfile, delimiter=' ')
+            digests = []
+            for row in csvreader:
+                digests.append({'name': row[0], 'sh': int(row[1], 16)})
+            with open(args.gold, 'rb') as fin:
+                gold_clusters = pickle.load(fin)
+                cluster_digests(digests, conf, gold_clusters)
+        # with open(args.gold, 'rb') as fin:
+        #     gold_clusters = pickle.load(fin)
+        #     with open(args.clusters, 'rb') as fin:
+        #         data = pickle.load(fin)
+        #         cluster_digests(data['digests'], data['conf'], gold_clusters)
     #--------------------------------------------------------------------------
     elif args.baseline:
         with open(

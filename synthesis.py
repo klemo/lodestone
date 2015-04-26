@@ -188,7 +188,7 @@ def corrupt(params):
     :param params: (output directory, filename, input text, corruption rate)
     '''
     outdir, name, text, p = params
-    cp = float(p)/1000
+    cp = float(p)/10000
     corrupted_name = '{}{}{:03d}'.format(name, NAME_SEPARATOR, p)
     LOG.info('Writing {} with p={:.3f}'.format(corrupted_name, cp))
     with open(os.path.join(outdir, corrupted_name + '.txt'), 'w') as fout:
@@ -213,7 +213,7 @@ def gen_corrupted_texts(indir, outdir, num_processes=50):
     os.makedirs(outdir)
     pool = Pool(processes=num_processes)
     # corrupt files in range:
-    corrupt_range = [p for p in range(10, 55, 5)]
+    corrupt_range = [p for p in range(1, 19, 2)]
     numd = len(corrupt_range)
     LOG.info('Will generate {} versions of each file'.format(numd))
     wfiles = []
