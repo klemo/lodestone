@@ -238,7 +238,7 @@ def write_gold_clusters(indir):
     '''
     Write gold cluster pairs to file
     '''
-    gold_filename = 'gold_clusters.tmp'
+    gold_filename = 'gold_clusters.pickle'
     files = list(get_texts(indir, read_files=False))
     scores = {}
     n = len(files)
@@ -248,6 +248,7 @@ def write_gold_clusters(indir):
                 key = sorted((files[i], files[j]))
                 scores[', '.join(key)] = \
                     basename(files[i]) == basename(files[j])
+                print('\r{:.2f}'.format(float(i)/n*100))
     with open(os.path.join(indir[0], gold_filename), 'w') as goldout:
         pickle.dump(scores, goldout)
 
