@@ -8,7 +8,7 @@ lodestone (let's hash books)
 to generate book digests:
 $ python lodestone.py --i path_to_books_dir --o digests
 
-additional params: --k --l --remove_stopwords
+additional params: --k --l --stopwords
 
 to analyze book digests:
 $ python lodestone.py --clusters digests --gold gold_clusters_file
@@ -28,15 +28,17 @@ import time
 import os
 import sys
 import pickle
-from pprint import pprint
 import csv
 import simhash
+import simplejson
 import numpy as np
-import matplotlib.pyplot as plt
-from sklearn import cluster
 import nltk
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+import pika
+import uuid
 import utils
+from sklearn import cluster
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from pprint import pprint
 
 #------------------------------------------------------------------------------
 
@@ -44,6 +46,7 @@ LOG = logging.getLogger('lodestone')
 
 #------------------------------------------------------------------------------
 
+Q = 'lodestone_q'
 NAME_SEPARATOR = '__'
 
 #------------------------------------------------------------------------------
@@ -74,21 +77,6 @@ def get_texts(indirs):
             if ext != '.txt':
                 continue
             yield name, filepath
-
-#------------------------------------------------------------------------------
-            
-def hash_filepath_worker(filedesc, conf):
-    '''
-    Get fingerprint for given filepath
-    '''
-    LOG.info('processing {}'.format(filedesc))
-    with open(filedesc[1], 'r') as fin:
-        sh = simhash.simhash(fin.read(),
-                             k=conf['k'],
-                             lenhash=conf['lenhash'],
-                             remove_stopwords=conf['remove_stopwords'])
-        return {'name': filedesc[0], 'sh': sh}
-    return None
             
 #------------------------------------------------------------------------------
 
@@ -101,9 +89,58 @@ def hash_path_async(path, conf):
     :param path: directory containing ebook files
     :param num_processes: number of processes to spawn
     '''
-    # sequential
-    return [hash_filepath_worker(text_name, conf)
-            for text_name in get_texts(path)]
+
+    output = [] # will populate this asynchronously with digests
+    corr_ids = [] # correlation ids for pika messages
+    
+    def on_response(ch, method, props, body):
+        '''
+        Pika callback: check correlation_id and append to output
+        '''
+        if props.correlation_id in corr_ids:
+            response = simplejson.loads(body)
+            print response
+            output.append(response)
+
+    def submit_task(text_name):
+        '''
+        Submit taks to remote worker
+        '''
+        corr_id = str(uuid.uuid4())
+        corr_ids.append(corr_id)
+        channel.basic_publish(
+            exchange='',
+            routing_key=Q,
+            properties=pika.BasicProperties(reply_to=callback_queue,
+                                            correlation_id=corr_id),
+            body=simplejson.dumps((text_name, conf)))
+
+    # setup basic rabbit rpc
+    connection = pika.BlockingConnection(pika.ConnectionParameters(
+            host='localhost'))
+    channel = connection.channel()
+    result = channel.queue_declare(exclusive=True)
+    callback_queue = result.method.queue
+    channel.basic_consume(on_response, no_ack=True,
+                          queue=callback_queue)
+    # get list of text files in the dir path
+    texts = list(get_texts(path))
+    # submit to workers
+    [submit_task(text) for text in texts]
+    # collect digests
+    while len(output) < len(texts):
+        connection.process_data_events()
+    return output
+    # sequential version
+    # for text_name in get_texts(path):
+    #     LOG.info('processing {}'.format(filedesc))
+    #     with open(filedesc[1], 'r') as fin:
+    #         sh = simhash.simhash(fin.read(),
+    #                              k=conf['k'],
+    #                              lenhash=conf['lenhash'],
+    #                              stopwords=conf['stopwords'])
+    #         output.append({'name': filedesc[0], 'sh': sh})
+    # return output
 
 #------------------------------------------------------------------------------
 
@@ -142,8 +179,6 @@ def score_digests(digests, num_variants, max_bits, render_graph):
             tp = fp = 0.
             similars = [j for j, d in enumerate(dmatrix[i])
                         if digests[j]['name'] != digests[i]['name'] and d <= k]
-            #if k == 30:
-            #    print('{} --> {}'.format(i, digests[i]['name']), [digests[s]['name'] for s in similars])
             for s in similars:
                 if basename(digests[i]['name']) == basename(digests[s]['name']):
                     tp += 1
@@ -161,14 +196,17 @@ def score_digests(digests, num_variants, max_bits, render_graph):
             all_r.append(r)
         avg_p = np.mean(all_p)
         avg_r = np.mean(all_r)
+        f1 = 2*avg_p*avg_r/(avg_p+avg_r)
         print('k={}: p={:.2f}, r={:.2f}, f1={:.2f}'.format(
-                k, avg_p, avg_r, 2*avg_p*avg_r/(avg_p+avg_r)))
-        scores.append((k, avg_p, avg_r))
+                k, avg_p, avg_r, f1))
+        scores.append((k, avg_p, avg_r, f1))
     #--------------------------------------------------------------------------
     if render_graph:
-        pyt = [p for _, p, _ in scores] # precision graph
-        ryt = [r for _, _, r in scores] # recall graph
-        xt = [k for k, _, _  in scores] # x-axis max k bits
+        import matplotlib.pyplot as plt
+        print('Max f1: {:.2f}'.format(max([s[3] for s in scores])))
+        xt = [s[0] for s  in scores] # x-axis max k bits
+        pyt = [s[1] for s in scores] # precision graph
+        ryt = [s[2] for s in scores] # recall graph
         line_precision, = plt.plot(pyt, 'r-', label='precision', linestyle='--')
         line_recall, = plt.plot(ryt, 'b-', label='recall')
         plt.legend()
@@ -272,10 +310,10 @@ def run_baseline(indir, gold):
     calc_scores(labels, gold)
 
 #------------------------------------------------------------------------------
-    
+
 if __name__ == '__main__':
     logging.basicConfig(format='%(levelname)s : %(message)s',
-                        level=logging.DEBUG)
+                        level=logging.INFO)
     parser = argparse.ArgumentParser()
     parser.add_argument('--i',
                         help='path to input directory with txt books',
@@ -289,17 +327,16 @@ if __name__ == '__main__':
     parser.add_argument('--k',
                         dest='conf_k',
                         help='k-gram',
-                        default=1,
-                        required=False,
-                        type=int)
+                        nargs=2,
+                        default=['3', '4'])
     parser.add_argument('--l',
                         dest='conf_lenhash',
                         help='length of the digest',
                         default=128,
                         required=False,
                         type=int)
-    parser.add_argument('--remove_stopwords',
-                        dest='conf_remove_stopwords',
+    parser.add_argument('--stopwords',
+                        dest='conf_stopwords',
                         help='if stopwords should be removed',
                         default=False,
                         required=False,
@@ -331,7 +368,7 @@ if __name__ == '__main__':
                         type=int)
     parser.add_argument('--max_bits',
                         help='hamming bit range',
-                        default=64,
+                        default=48,
                         required=False,
                         type=int)
     parser.add_argument('--graph',
@@ -340,16 +377,13 @@ if __name__ == '__main__':
                         const=True,
                         nargs='?')
     args = parser.parse_args()
-    conf = {'k': args.conf_k,
+    conf = {'k': [int(i) for i in args.conf_k],
             'lenhash': args.conf_lenhash,
-            'remove_stopwords': args.conf_remove_stopwords}
+            'stopwords': args.conf_stopwords}
     #--------------------------------------------------------------------------
     if args.i:
         digests = hash_path_async(args.i, conf)
         digests = sorted(digests, key=lambda i: i['name'])
-        #with open(args.o, 'wb') as fout:
-        #    pickle.dump({'digests': digests, 'conf': conf},
-        #                fout)
         with open(args.o, 'w') as csvfile:
             csvwriter = csv.writer(csvfile, delimiter=' ')
             for digest in digests:
@@ -363,11 +397,6 @@ if __name__ == '__main__':
                 digests.append({'name': row[0], 'sh': int(row[1], 16)})
             score_digests(
                 digests, args.num_variants, args.max_bits, args.graph)
-        # with open(args.score, 'rb') as fin:
-        #     pprint(score_digests(pickle.load(fin),
-        #                          krange,
-        #                          args.num_variants,
-        #                          args.graph))
     #--------------------------------------------------------------------------
     elif args.clusters and args.gold and conf:
         with open(args.clusters, 'r') as csvfile:
@@ -378,11 +407,6 @@ if __name__ == '__main__':
             with open(args.gold, 'rb') as fin:
                 gold_clusters = pickle.load(fin)
                 cluster_digests(digests, conf, gold_clusters)
-        # with open(args.gold, 'rb') as fin:
-        #     gold_clusters = pickle.load(fin)
-        #     with open(args.clusters, 'rb') as fin:
-        #         data = pickle.load(fin)
-        #         cluster_digests(data['digests'], data['conf'], gold_clusters)
     #--------------------------------------------------------------------------
     elif args.baseline:
         with open(

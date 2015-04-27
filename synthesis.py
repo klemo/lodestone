@@ -124,7 +124,7 @@ def corrupt_ocr(raw_text, p):
     #lang_model = nltk.Text(tokens)
     text = bytearray(raw_text)
     text_length = len(text)
-    num_to_change = int(p*text_length)
+    num_to_change = int(p/100*text_length)
     num_changed = 0
     mutations = defaultdict(int)
     while num_changed < num_to_change:
@@ -188,11 +188,10 @@ def corrupt(params):
     :param params: (output directory, filename, input text, corruption rate)
     '''
     outdir, name, text, p = params
-    cp = float(p)/10000
-    corrupted_name = '{}{}{:03d}'.format(name, NAME_SEPARATOR, p)
-    LOG.info('Writing {} with p={:.3f}'.format(corrupted_name, cp))
+    corrupted_name = '{}{}{}'.format(name, NAME_SEPARATOR, '{:.3f}'.format(p)[2:])
+    LOG.info('Writing {} with p={:.3f}'.format(corrupted_name, p))
     with open(os.path.join(outdir, corrupted_name + '.txt'), 'w') as fout:
-        fout.write(corrupt_ocr(text, cp))
+        fout.write(corrupt_ocr(text, p))
     return corrupted_name
 
 #------------------------------------------------------------------------------
@@ -213,7 +212,8 @@ def gen_corrupted_texts(indir, outdir, num_processes=50):
     os.makedirs(outdir)
     pool = Pool(processes=num_processes)
     # corrupt files in range:
-    corrupt_range = [p for p in range(1, 19, 2)]
+    #corrupt_range = [p for p in range(1, 19, 2)]
+    corrupt_range = [float(p)/1000 for p in range(5, 450, 50)]
     numd = len(corrupt_range)
     LOG.info('Will generate {} versions of each file'.format(numd))
     wfiles = []
