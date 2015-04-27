@@ -31,7 +31,6 @@ import shutil
 from collections import defaultdict
 import utils
 import nltk
-import matplotlib.pyplot as plt
 
 #------------------------------------------------------------------------------
 
@@ -258,6 +257,7 @@ def do_analysis(indir):
     '''
     Extracts some useful info from the generated synthetic dataset
     '''
+    import matplotlib.pyplot as plt
     files = list(get_texts(indir, read_files=False))
     canonical = set([basename(f) for f in files])
     n_canonical = len(canonical)
