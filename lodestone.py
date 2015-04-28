@@ -10,8 +10,8 @@ $ python lodestone.py --i path_to_books_dir --o digests
 
 additional params: --k --l --stopwords
 
-to analyze book digests:
-$ python lodestone.py --clusters digests --gold gold_clusters_file
+to analyze book digests using kmeans clustering:
+$ python lodestone.py --clusters digests --gold gold_clusters_file [-l]
 
 to do a baseline analysis:
 $ python lodestone.py --baseline path_to_books_dir --gold gold_clusters_file
@@ -338,7 +338,7 @@ if __name__ == '__main__':
     parser.add_argument('--stopwords',
                         dest='conf_stopwords',
                         help='if stopwords should be removed',
-                        default=False,
+                        default=True,
                         required=False,
                         type=bool)
     parser.add_argument('--score',

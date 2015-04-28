@@ -9,9 +9,9 @@ generates synthetic text dataset by corrupting referent dataset with random
 errors; errors simulate ocr confusions and random edits
 
 to generate synthetic dataset:
-$ python synthesis.py --gen --i indir --o outdir
+$ python synthesis.py --gen --i indir --o outdir [--gold]
 
-to write gold clusters membership pairs:
+to write only gold clusters membership pairs:
 $ python synthesis.py --gold --i indir
 '''
 
@@ -53,8 +53,8 @@ char_mutations = [
     ('e',   (1, 2),              0.06), # 1:2 edit
     ('e',   (2, 1),              0.13), # 2:1 edit
     ('e',   (2, 2),              0.08), # 2:2 edit
-    ('ti',  None,                0.005), # random text insertion
-    ('td',  None,                0.005), # random text deletion
+#    ('ti',  None,                0.005), # random text insertion
+    ('td',  None,                0.01), # random text deletion
     ]
 
 # create discrete distribution for characher mutations
@@ -108,17 +108,25 @@ def corrupt_ocr(raw_text, p):
     Introduce p% character OCR errors to given text
 
     :param raw_text: text to corrupt
-    :param p: float, corruption parameter 0.0-1.0
+    :param p: float, corruption parameter in % (0-100)
     '''
 
     def gen_rnd_char():
         '''
         Return random char of the english alphabet
         '''
-        # TODO: digits should be less probable, not equally
         return random.choice(LETTERS)
+
+    def locate_nearest(text, text_length, pos, char):
+        '''
+        Locate nearest position for char in text starting.
+        '''
+        while text[pos] != char:
+            pos += 1
+            if pos >= text_length:
+                return -1
+        return pos
     
-    #words = text.split()
     #tokens = nltk.word_tokenize(raw_text)
     #lang_model = nltk.Text(tokens)
     text = bytearray(raw_text)
@@ -127,37 +135,35 @@ def corrupt_ocr(raw_text, p):
     num_changed = 0
     mutations = defaultdict(int)
     while num_changed < num_to_change:
+        text_length = len(text) # calc new text_length after each iteration
         # generate random mutation
         mut_type, mut_char, mut_prob = char_mutations[MUT_DIST.rvs()]
-        #mutations[(mut_type, mut_char, mut_prob)] += 1
         if not mut_char:
             # any char; get at random
             mut_char = gen_rnd_char()
-        # generate random word to change
+        # generate random position to change
         pos = random.randrange(0, text_length - 1)
         # INSERT character
         if mut_type == 'i':
             text.insert(pos, mut_char)
         # DELETE character
         elif mut_type == 'd':
-            del text[pos]
+            if mut_char:
+                loc = locate_nearest(text, text_length,pos, mut_char)
+                if loc > -1:
+                    del text[loc]
+            else:
+                del text[pos]
         # EDIT character
         elif mut_type == 'e':
             old_char, new_char = mut_char
             # EDIT specific
             if type(old_char) == type(new_char) == str:
                 # edit chat at position
-                # (or locate nearest position for mutation)
-                # # (go right, then left: 1, -2, 3, -4...)
-                offset, direction = (1, 1)
-                while text[pos] != ord(old_char):
-                    offset, direction = (offset + 1, direction*(-1))
-                    pos = offset * direction
-                    if pos < 0 or pos >= text_length:
-                        break
-                    if 0 <= pos < text_length:
-                        text[pos] = ord(new_char)
-                        num_changed += 1
+                loc = locate_nearest(text, text_length, pos, old_char)
+                if loc >= -1:
+                    text[pos] = ord(new_char)
+                    num_changed += 1
             # EDIT any
             elif type(old_char) == type(new_char) == int:
                 # any char substitution
@@ -174,8 +180,7 @@ def corrupt_ocr(raw_text, p):
             #text[pos:pos] = rnd_text
         # DELETE RANDOM TEXT
         elif mut_type == 'td':
-            pass
-            #del text[pos:pos+random.randrange(2, 128)]
+            del text[pos:pos+random.randrange(1, 64)]
     return str(text)
 
 #------------------------------------------------------------------------------
@@ -211,24 +216,23 @@ def gen_corrupted_texts(indir, outdir, num_processes=50):
     os.makedirs(outdir)
     pool = Pool(processes=num_processes)
     # corrupt files in range:
-    #corrupt_range = [p for p in range(1, 19, 2)]
     corrupt_range = [float(p)/1000 for p in range(5, 450, 50)]
     numd = len(corrupt_range)
     LOG.info('Will generate {} versions of each file'.format(numd))
-    wfiles = []
     for name, text in get_texts(indir):
         # write original file as is
         orig_filename = name + NAME_SEPARATOR
         LOG.info('Writing {}'.format(orig_filename)) 
         with open(os.path.join(outdir, orig_filename + '.txt'), 'w') as fout:
             fout.write(text)
-        wfiles.append(orig_filename)
         # write corrupted texts
+        # sequential
+        #for p in corrupt_range:
+        #    corrupt((outdir, name, text, p))
         result = pool.map(corrupt, zip([outdir]*numd,
                                        [name]*numd,
                                        [text]*numd,
                                        corrupt_range))
-        wfiles.extend(result)
     pool.close()
     pool.join()
 
@@ -237,19 +241,25 @@ def gen_corrupted_texts(indir, outdir, num_processes=50):
 def write_gold_clusters(indir):
     '''
     Write gold cluster pairs to file
+
+    :param indir: list of dirs or single dir
     '''
     gold_filename = 'gold_clusters.pickle'
+    # read all book file names
     files = list(get_texts(indir, read_files=False))
     scores = {}
     n = len(files)
+    # write cluster membership for all distinct pairs from files (n*(n-1)/2)
     for i in range(n):
         for j in range(n):
             if files[i] != files[j]:
                 key = sorted((files[i], files[j]))
                 scores[', '.join(key)] = \
                     basename(files[i]) == basename(files[j])
-                print('\r{:.2f}'.format(float(i)/n*100))
-    with open(os.path.join(indir[0], gold_filename), 'w') as goldout:
+    # write pickled scores to gold_filename
+    with open(os.path.join(indir if type(indir) == str else indir[0],
+                           gold_filename), 'w') as goldout:
+        LOG.info('Writing {}'.format(gold_filename))
         pickle.dump(scores, goldout)
 
 #------------------------------------------------------------------------------
@@ -257,6 +267,8 @@ def write_gold_clusters(indir):
 def do_analysis(indir):
     '''
     Extracts some useful info from the generated synthetic dataset
+
+    :param indir: list of dirs or single dir
     '''
     import matplotlib.pyplot as plt
     files = list(get_texts(indir, read_files=False))
@@ -309,12 +321,18 @@ if __name__ == '__main__':
                         const=True,
                         nargs='?')
     args = parser.parse_args()
+    # --gen --i --o [--gold]
     if args.gen and args.i and args.o:
         gen_corrupted_texts(args.i, args.o)
+        if args.gold:
+            write_gold_clusters(args.o)
+    # --gold --i
     elif args.gold and args.i:
         write_gold_clusters(args.i)
+    # --analysis --i
     elif args.analysis and args.i:
         do_analysis(args.i)
+    # --p
     elif args.p:
         print(corrupt_ocr('test ' * 100, args.p))
     else:
