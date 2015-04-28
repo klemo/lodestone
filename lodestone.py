@@ -115,6 +115,7 @@ def hash_path_async(path, conf):
                                             correlation_id=corr_id),
             body=simplejson.dumps((text_name, conf)))
 
+    LOG.info('Conf: {}'.format(conf))
     # setup basic rabbit rpc
     connection = pika.BlockingConnection(pika.ConnectionParameters(
             host='localhost'))
