@@ -53,8 +53,8 @@ char_mutations = [
     ('e',   (1, 2),              0.06), # 1:2 edit
     ('e',   (2, 1),              0.13), # 2:1 edit
     ('e',   (2, 2),              0.08), # 2:2 edit
-#    ('ti',  None,                0.005), # random text insertion
-    ('td',  None,                0.02), # random text deletion
+    ('ti',  None,                0.01), # random text insertion
+    ('td',  None,                0.01), # random text deletion
     ]
 
 # create discrete distribution for characher mutations
@@ -99,12 +99,12 @@ def get_texts(indirs, read_files=True):
                 with open(filepath, 'r') as fin:
                     yield name, fin.read()
             else:
-                yield name
+                yield filepath, name
 
 #------------------------------------------------------------------------------
 
 #@utils.timeit
-def corrupt_ocr(raw_text, p):
+def corrupt_ocr(filepath, p, random_file):
     '''
     Introduce p% character OCR errors to given text
 
@@ -127,7 +127,15 @@ def corrupt_ocr(raw_text, p):
             if pos >= text_length:
                 return -1
         return pos
-    
+
+    raw_text = None
+    random_text = None
+    with open(filepath, 'r') as fin:
+        raw_text = fin.read()
+    if not raw_text:
+        return ''
+    with open(random_file, 'r') as rin:
+        random_text = rin.read()
     #tokens = nltk.word_tokenize(raw_text)
     #lang_model = nltk.Text(tokens)
     text = bytearray(raw_text)
@@ -177,12 +185,12 @@ def corrupt_ocr(raw_text, p):
                 num_changed += 1
         # INSERT RANDOM TEXT
         elif mut_type == 'ti':
-            pass
-            #rnd_text = lang_model.generate(random.randrange(2, 512))
-            #text[pos:pos] = rnd_text
+            spos = random.randrange(0, len(random_text)/2)
+            epos = spos + random.randrange(0, 128)
+            text[pos:pos] = random_text[spos:epos]
         # DELETE RANDOM TEXT
         elif mut_type == 'td':
-            del text[pos:pos+random.randrange(1, 128)]
+            del text[pos:pos + random.randrange(1, 128)]
     return str(text)
 
 #------------------------------------------------------------------------------
@@ -193,11 +201,11 @@ def corrupt(params):
 
     :param params: (output directory, filename, input text, corruption rate)
     '''
-    outdir, name, text, p = params
+    outdir, filepath, name, p, random_file = params
     corrupted_name = '{}{}{}'.format(name, NAME_SEPARATOR, '{:1.3f}'.format(p))
     LOG.info('Writing {} with p={:1.3f}'.format(corrupted_name, p))
     with open(os.path.join(outdir, corrupted_name + '.txt'), 'w') as fout:
-        fout.write(corrupt_ocr(text, p))
+        fout.write(corrupt_ocr(filepath, p, random_file))
     return corrupted_name
 
 #------------------------------------------------------------------------------
@@ -222,20 +230,26 @@ def gen_corrupted_texts(indir, outdir, max_p, num_processes=10):
     corrupt_range = [random.uniform(0, max_p) for i in range(9)]
     numd = len(corrupt_range)
     LOG.info('Will generate {} versions of each file'.format(numd))
-    for name, text in get_texts(indir):
+    texts = list(get_texts(indir, read_files=False))
+    for filepath, name in texts:
         # write original file as is
         orig_filename = name + NAME_SEPARATOR
-        LOG.info('Writing {}'.format(orig_filename)) 
-        with open(os.path.join(outdir, orig_filename + '.txt'), 'w') as fout:
-            fout.write(text)
+        LOG.info('Writing {}'.format(orig_filename))
+        with open(filepath, 'r') as fin:
+            with open(os.path.join(outdir, orig_filename + '.txt'), 'w') as fout:
+                fout.write(fin.read())
         # write corrupted texts
         # sequential
         #for p in corrupt_range:
         #    corrupt((outdir, name, text, p))
+        # generate list of random filepaths
+        random_files = [texts[random.randrange(0, len(texts))][0]
+                        for i in xrange(numd)]
         result = pool.map(corrupt, zip([outdir]*numd,
+                                       [filepath]*numd,
                                        [name]*numd,
-                                       [text]*numd,
-                                       corrupt_range))
+                                       corrupt_range,
+                                       random_files))
     pool.close()
     pool.join()
 
@@ -249,7 +263,7 @@ def write_gold_clusters(indir):
     '''
     gold_filename = 'gold_clusters.pickle'
     # read all book file names
-    files = list(get_texts(indir, read_files=False))
+    files = [f[1] for f in list(get_texts(indir, read_files=False))]
     scores = {}
     n = len(files)
     # write cluster membership for all distinct pairs from files (n*(n-1)/2)
