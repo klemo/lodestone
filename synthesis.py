@@ -9,7 +9,7 @@ generates synthetic text dataset by corrupting referent dataset with random
 errors; errors simulate ocr confusions and random edits
 
 to generate synthetic dataset:
-$ python synthesis.py --gen --i indir --o outdir [--gold]
+$ python synthesis.py --gen --i indir --o outdir --p [--gold]
 
 to write only gold clusters membership pairs:
 $ python synthesis.py --gold --i indir
@@ -203,7 +203,7 @@ def corrupt(params):
 #------------------------------------------------------------------------------
 
 @utils.timeit
-def gen_corrupted_texts(indir, outdir, num_processes=10):
+def gen_corrupted_texts(indir, outdir, max_p, num_processes=10):
     '''
     Spawn corruption in parallel for every text file in a given input
     directory and write corrupted texts to output directory
@@ -219,7 +219,7 @@ def gen_corrupted_texts(indir, outdir, num_processes=10):
     pool = Pool(processes=num_processes)
     # corrupt files in range:
     #corrupt_range = [float(p)/1000 for p in range(5, 450, 50)]
-    corrupt_range = [float(random.randrange(0, 4000))/1000 for i in range(9)]
+    corrupt_range = [random.uniform(0, max_p) for i in range(9)]
     numd = len(corrupt_range)
     LOG.info('Will generate {} versions of each file'.format(numd))
     for name, text in get_texts(indir):
@@ -307,6 +307,7 @@ if __name__ == '__main__':
                         dest='p',
                         help='percent of character corruption',
                         required=False,
+                        default=0.5,
                         type=float)
     parser.add_argument('--gen',
                         help='generate corrupted files',
@@ -326,7 +327,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     # --gen --i --o [--gold]
     if args.gen and args.i and args.o:
-        gen_corrupted_texts(args.i, args.o)
+        gen_corrupted_texts(args.i, args.o, args.p)
         if args.gold:
             write_gold_clusters(args.o)
     # --gold --i
@@ -335,8 +336,5 @@ if __name__ == '__main__':
     # --analysis --i
     elif args.analysis and args.i:
         do_analysis(args.i)
-    # --p
-    elif args.p:
-        print(corrupt_ocr('test ' * 100, args.p))
     else:
         print('unknown combination of params')
