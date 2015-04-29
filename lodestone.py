@@ -171,7 +171,7 @@ def score_digests(digests, num_variants, max_bits, render_graph):
     print('\n')
     # calc prec/recall for different k ----------------------------------------
     scores = []
-    krange = range(0, max_bits, 5)
+    krange = range(0, max_bits, 1)
     for k in krange:
         # number of true/false positives
         all_p = []
@@ -388,7 +388,9 @@ if __name__ == '__main__':
         with open(args.o, 'w') as csvfile:
             csvwriter = csv.writer(csvfile, delimiter=' ')
             for digest in digests:
-                csvwriter.writerow([digest['name'], digest['sh']])
+                # name hex_digest
+                csvwriter.writerow([digest['name'],
+                                    hex(digest['sh']).strip('L')])
     #--------------------------------------------------------------------------
     elif args.score:
         with open(args.score, 'r') as csvfile:

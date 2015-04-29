@@ -46,7 +46,7 @@ LETTERS = string.ascii_letters + string.digits
 # (insert|delete|edit, char, probability)
 char_mutations = [
     ('i',   ord(' '),            0.32), # space insertion
-    ('d',   ord(' '),            0.06), # space deletion
+    ('d',   ord(' '),            0.05), # space deletion
     ('i',   None,                0.04), # any char insertion
     ('d',   None,                0.05), # any char deletion
     ('e',   (1, 1),              0.25), # 1:1 edit
@@ -54,7 +54,7 @@ char_mutations = [
     ('e',   (2, 1),              0.13), # 2:1 edit
     ('e',   (2, 2),              0.08), # 2:2 edit
 #    ('ti',  None,                0.005), # random text insertion
-    ('td',  None,                0.01), # random text deletion
+    ('td',  None,                0.02), # random text deletion
     ]
 
 # create discrete distribution for characher mutations
@@ -103,6 +103,7 @@ def get_texts(indirs, read_files=True):
 
 #------------------------------------------------------------------------------
 
+#@utils.timeit
 def corrupt_ocr(raw_text, p):
     '''
     Introduce p% character OCR errors to given text
@@ -148,12 +149,13 @@ def corrupt_ocr(raw_text, p):
             text.insert(pos, mut_char)
         # DELETE character
         elif mut_type == 'd':
-            if mut_char:
-                loc = locate_nearest(text, text_length,pos, mut_char)
-                if loc > -1:
-                    del text[loc]
-            else:
-                del text[pos]
+            # if mut_char:
+            #     loc = locate_nearest(text, text_length,pos, mut_char)
+            #     if loc > -1:
+            #         del text[loc]
+            # else:
+            #     del text[pos]
+            del text[pos]
         # EDIT character
         elif mut_type == 'e':
             old_char, new_char = mut_char
@@ -180,7 +182,7 @@ def corrupt_ocr(raw_text, p):
             #text[pos:pos] = rnd_text
         # DELETE RANDOM TEXT
         elif mut_type == 'td':
-            del text[pos:pos+random.randrange(1, 64)]
+            del text[pos:pos+random.randrange(1, 128)]
     return str(text)
 
 #------------------------------------------------------------------------------
@@ -192,8 +194,8 @@ def corrupt(params):
     :param params: (output directory, filename, input text, corruption rate)
     '''
     outdir, name, text, p = params
-    corrupted_name = '{}{}{}'.format(name, NAME_SEPARATOR, '{:.3f}'.format(p)[2:])
-    LOG.info('Writing {} with p={:.3f}'.format(corrupted_name, p))
+    corrupted_name = '{}{}{}'.format(name, NAME_SEPARATOR, '{:1.3f}'.format(p))
+    LOG.info('Writing {} with p={:1.3f}'.format(corrupted_name, p))
     with open(os.path.join(outdir, corrupted_name + '.txt'), 'w') as fout:
         fout.write(corrupt_ocr(text, p))
     return corrupted_name
@@ -201,7 +203,7 @@ def corrupt(params):
 #------------------------------------------------------------------------------
 
 @utils.timeit
-def gen_corrupted_texts(indir, outdir, num_processes=50):
+def gen_corrupted_texts(indir, outdir, num_processes=10):
     '''
     Spawn corruption in parallel for every text file in a given input
     directory and write corrupted texts to output directory
@@ -216,7 +218,8 @@ def gen_corrupted_texts(indir, outdir, num_processes=50):
     os.makedirs(outdir)
     pool = Pool(processes=num_processes)
     # corrupt files in range:
-    corrupt_range = [float(p)/1000 for p in range(5, 450, 50)]
+    #corrupt_range = [float(p)/1000 for p in range(5, 450, 50)]
+    corrupt_range = [float(random.randrange(0, 4000))/1000 for i in range(9)]
     numd = len(corrupt_range)
     LOG.info('Will generate {} versions of each file'.format(numd))
     for name, text in get_texts(indir):
