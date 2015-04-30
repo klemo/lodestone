@@ -60,23 +60,22 @@ def basename(fullname):
 
 #------------------------------------------------------------------------------
 
-def get_texts(indirs):
+def get_texts(indir):
     '''
-    Yields filepaths for .txt files in a given directory list indirs
+    Yields filepaths for .txt files in a given directory indir
 
-    :param indirs: directory (wildcard) where to look for books
+    :param indir: directory where to look for books
     '''
-    for indir in indirs:
-        LOG.debug('Processing: {}'.format(indir))
-        for filename in os.listdir(indir):
-            filepath = os.path.join(indir, filename)
-            # skip directories
-            if os.path.isdir(filepath):
-                continue
-            name, ext = os.path.splitext(filename)
-            if ext != '.txt':
-                continue
-            yield name, filepath
+    LOG.debug('Processing: {}'.format(indir))
+    for filename in os.listdir(indir):
+        filepath = os.path.join(indir, filename)
+        # skip directories
+        if os.path.isdir(filepath):
+            continue
+        name, ext = os.path.splitext(filename)
+        if ext != '.txt':
+            continue
+        yield name, filepath
             
 #------------------------------------------------------------------------------
 
@@ -319,7 +318,8 @@ if __name__ == '__main__':
     parser.add_argument('--i',
                         help='path to input directory with txt books',
                         required=False,
-                        nargs='*')
+                        default=None,
+                        type=str)
     parser.add_argument('--o',
                         help='path to output (pickled) file',
                         default='out.tmp',
@@ -359,9 +359,9 @@ if __name__ == '__main__':
                         type=str)
     parser.add_argument('--baseline',
                         help='input directory for the baseline analysis',
-                        default=None,
-                        required=False,
-                        nargs='*')
+                        default=False,
+                        const=True,
+                        nargs='?')
     parser.add_argument('--num_variants',
                         help='num of book variants',
                         default=None,
@@ -411,7 +411,7 @@ if __name__ == '__main__':
                 gold_clusters = pickle.load(fin)
                 cluster_digests(digests, conf, gold_clusters)
     #--------------------------------------------------------------------------
-    elif args.baseline:
+    elif args.baseline and args.i:
         with open(
-            os.path.join(args.baseline[0], 'gold_clusters.tmp'), 'r') as fin:
-            run_baseline(args.baseline, pickle.load(fin))
+            os.path.join(args.i, 'gold_clusters.tmp'), 'r') as fin:
+            run_baseline(args.i, pickle.load(fin))
