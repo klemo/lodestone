@@ -339,7 +339,7 @@ if __name__ == '__main__':
     parser.add_argument('--stopwords',
                         dest='conf_stopwords',
                         help='if stopwords should be removed',
-                        default=True,
+                        default=False,
                         required=False,
                         type=bool)
     parser.add_argument('--score',
