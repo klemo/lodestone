@@ -232,7 +232,7 @@ def gen_corrupted_texts(indir, outdir, max_p, num_processes=10):
         # generate random corruption rate
         corrupt_range = [random.uniform(0, max_p) for i in range(max_dups)]
         numd = len(corrupt_range)
-        LOG.info('Writing #{} duplicates for {}'.format(numd, name))
+        print('{} {}'.format(name, numd))
         # write original file as is
         orig_filename = name + NAME_SEPARATOR
         LOG.info('Writing {}'.format(orig_filename))
@@ -305,8 +305,8 @@ def do_analysis(indir):
 #------------------------------------------------------------------------------
     
 if __name__ == '__main__':
-    logging.basicConfig(format='%(levelname)s : %(message)s',
-                        level=logging.DEBUG)
+    # logging.basicConfig(format='%(levelname)s : %(message)s',
+    #                     level=logging.INFO)
     parser = argparse.ArgumentParser()
     parser.add_argument('--i',
                         dest='i',
