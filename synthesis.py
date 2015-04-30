@@ -225,13 +225,14 @@ def gen_corrupted_texts(indir, outdir, max_p, num_processes=10):
         shutil.rmtree(outdir, ignore_errors=True)
     os.makedirs(outdir)
     pool = Pool(processes=num_processes)
-    # corrupt files in range:
-    #corrupt_range = [float(p)/1000 for p in range(5, 450, 50)]
-    corrupt_range = [random.uniform(0, max_p) for i in range(9)]
-    numd = len(corrupt_range)
-    LOG.info('Will generate {} versions of each file'.format(numd))
     texts = list(get_texts(indir, read_files=False))
     for filepath, name in texts:
+        # how many books to generate
+        max_dups = random.randrange(1, 15)
+        # generate random corruption rate
+        corrupt_range = [random.uniform(0, max_p) for i in range(max_dups)]
+        numd = len(corrupt_range)
+        LOG.info('Writing #{} duplicates for {}'.format(numd, name))
         # write original file as is
         orig_filename = name + NAME_SEPARATOR
         LOG.info('Writing {}'.format(orig_filename))
