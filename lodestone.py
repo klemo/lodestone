@@ -98,7 +98,7 @@ def hash_path_async(path, conf):
         '''
         if props.correlation_id in corr_ids:
             response = simplejson.loads(body)
-            print response
+            #print response
             output.append(response)
 
     def submit_task(text_name):
@@ -280,7 +280,7 @@ def cluster_digests(digests, conf, gold):
                              init=initial_centers)
     k_means.fit(features)
     labels = zip([i['name'] for i in digests], k_means.labels_)
-    print('Num clusters: {}'.format(max(k_means.labels_) + 1))
+    #print('Num clusters: {}'.format(max(k_means.labels_) + 1))
     calc_scores(labels, gold)
 
 #------------------------------------------------------------------------------
@@ -402,6 +402,7 @@ if __name__ == '__main__':
                 digests, args.num_variants, args.max_bits, args.graph)
     #--------------------------------------------------------------------------
     elif args.clusters and args.gold and conf:
+        print('{} for {}'.format(args.clusters, conf['lenhash']))
         with open(args.clusters, 'r') as csvfile:
             csvreader = csv.reader(csvfile, delimiter=' ')
             digests = []
